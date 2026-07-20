@@ -1,0 +1,33 @@
+services:
+    sso:
+      build: .
+      ports:
+        - "3000:3000"
+      environment:
+        - DATABASE_URL=postgres://sso:${POSTGRES_PASSWORD}@db:5432/sso
+        - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+        - TRUSTED_ORIGINS=${TRUSTED_ORIGINS}
+        - PORT=3000
+        - BASE_URL=${BASE_URL}
+        - AUTH_SECRET=${AUTH_SECRET}
+      depends_on:
+        db:
+          condition: service_healthy
+  
+    db:
+      image: postgres:16-alpine
+      environment:
+        POSTGRES_USER: sso
+        POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+        POSTGRES_DB: sso
+      healthcheck:
+        test: ["CMD-SHELL", "pg_isready -U sso"]
+        interval: 5s
+        timeout: 5s
+        retries: 5
+      volumes:
+        - sso_pgdata:/var/lib/postgresql/data
+  
+  volumes:
+    sso_pgdata:
+  
