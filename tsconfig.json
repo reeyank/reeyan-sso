@@ -1,1 +1,7 @@
-{"compilerOptions":{"target":"ES2022","module":"NodeNext","moduleResolution":"NodeNext","outDir":"./dist","rootDir":"./src","strict":true,"esModuleInterop":true,"skipLibCheck":true,"declaration":true},"include":["src"]}
+{
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.server.json" },
+    { "path": "./ui/tsconfig.json" }
+  ]
+}
