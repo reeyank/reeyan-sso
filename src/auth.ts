@@ -27,6 +27,11 @@ export const auth = betterAuth({
             loginPage: "/sign-in",
             consentPage: "/consent",
             allowDynamicClientRegistration: true, // self-serve client registration
+            // Admin-created clients share one owner, so every administrator can
+            // manage the same application catalog.
+            clientReference: ({ user }) =>
+                user?.role === "admin" ? "sso-admin" : undefined,
+            clientPrivileges: ({ user }) => user?.role === "admin",
         }),
     ],
     trustedOrigins: (process.env.TRUSTED_ORIGINS ?? "").split(","),

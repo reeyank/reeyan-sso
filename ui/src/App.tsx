@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react";
+import { AdminDashboard } from "./AdminDashboard";
 
 const scopeLabels: Record<string, string> = {
   openid: "verify your identity",
@@ -194,6 +195,10 @@ function ConsentPage() {
 }
 
 export function App() {
+  if (window.location.pathname === "/admin") {
+    return <AdminDashboard />;
+  }
+
   if (window.location.pathname === "/consent") {
     document.title = `reeyan — authorize ${
       new URLSearchParams(window.location.search).get("client_name") ??

@@ -17,6 +17,7 @@ app.on(["GET", "POST"], "/api/auth/**", (c) => auth.handler(c.req.raw));
 
 app.get("/sign-in", (c) => c.html(frontend));
 app.get("/consent", (c) => c.html(frontend));
+app.get("/admin", (c) => c.html(frontend));
 
 app.get("/health", (c) => c.text("ok"));
 
