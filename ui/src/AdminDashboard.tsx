@@ -48,10 +48,17 @@ async function apiRequest<T>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
+  const method = options.method ?? "GET";
+  // Better Auth rejects a bodyless POST with 415 (missing Content-Type) and a
+  // JSON Content-Type with no body with 400, so every write needs both — even
+  // endpoints like /sign-out that take no arguments.
+  const sendsBody = method !== "GET" && method !== "HEAD";
+
   const response = await fetch(`${API}${path}`, {
     ...options,
+    ...(sendsBody ? { body: options.body ?? "{}" } : {}),
     headers: {
-      ...(options.body ? { "Content-Type": "application/json" } : {}),
+      ...(sendsBody ? { "Content-Type": "application/json" } : {}),
       ...options.headers,
     },
   });
@@ -158,9 +165,11 @@ function LoadingState() {
 
 function AccessState({
   forbidden,
+  notice,
   onSignOut,
 }: {
   forbidden: boolean;
+  notice: Notice | null;
   onSignOut: () => void;
 }) {
   return (
@@ -173,6 +182,7 @@ function AccessState({
           ? "This account does not have administrator privileges."
           : "Use an administrator account to continue."}
       </p>
+      {notice ? <p className="gate-error">{notice.message}</p> : null}
       <div className="gate-actions">
         {forbidden ? (
           <button className="button-secondary" type="button" onClick={onSignOut}>
@@ -273,10 +283,16 @@ export function AdminDashboard() {
   }
 
   async function signOut() {
+    setBusyId("sign-out");
+    setNotice(null);
     try {
       await apiRequest("/sign-out", { method: "POST" });
-    } finally {
       window.location.href = "/sign-in?callbackURL=%2Fadmin";
+    } catch (error) {
+      // Redirecting on failure used to make a failed sign-out look successful:
+      // the session survived and /sign-in sent the user straight back in.
+      showError(error);
+      setBusyId(null);
     }
   }
 
@@ -445,6 +461,7 @@ export function AdminDashboard() {
     return (
       <AccessState
         forbidden={access === "forbidden"}
+        notice={notice}
         onSignOut={() => void signOut()}
       />
     );
@@ -488,9 +505,10 @@ export function AdminDashboard() {
           <button
             className="text-button"
             type="button"
+            disabled={busyId === "sign-out"}
             onClick={() => void signOut()}
           >
-            Sign out
+            {busyId === "sign-out" ? "Signing out…" : "Sign out"}
           </button>
         </div>
       </aside>

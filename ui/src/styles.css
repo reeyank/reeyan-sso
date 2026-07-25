@@ -175,7 +175,7 @@ button {
     transform 0.1s ease;
 }
 
-button:active {
+button:active:not(:disabled) {
   transform: scale(0.99);
 }
 
@@ -185,8 +185,8 @@ button:focus-visible {
 }
 
 button:disabled {
-  cursor: wait;
-  opacity: 0.6;
+  cursor: not-allowed;
+  opacity: 0.4;
 }
 
 .btn-primary,
@@ -370,7 +370,7 @@ body.admin-view #root {
 .brand-label {
   margin-top: 0.35rem;
   color: var(--admin-muted);
-  font-size: 0.62rem;
+  font-size: 0.66rem;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -392,12 +392,12 @@ body.admin-view #root {
   border: 1px solid transparent;
   color: var(--admin-muted);
   background: transparent;
-  font-size: 0.72rem;
+  font-size: 0.79rem;
   letter-spacing: 0;
   text-transform: none;
 }
 
-.admin-nav button:hover {
+.admin-nav button:hover:not(:disabled) {
   color: var(--ink);
   background: rgba(215, 230, 244, 0.04);
 }
@@ -453,13 +453,13 @@ body.admin-view #root {
 }
 
 .account-copy strong {
-  font-size: 0.74rem;
+  font-size: 0.81rem;
 }
 
 .account-copy span {
   margin-top: 0.18rem;
   color: var(--admin-muted);
-  font-size: 0.64rem;
+  font-size: 0.71rem;
 }
 
 .sidebar-account > .text-button {
@@ -474,8 +474,8 @@ body.admin-view #root {
 
 .admin-topbar {
   display: flex;
-  min-height: 5.5rem;
-  align-items: flex-start;
+  min-height: 4rem;
+  align-items: center;
   justify-content: space-between;
   gap: 2rem;
 }
@@ -483,28 +483,36 @@ body.admin-view #root {
 .section-kicker {
   margin: 0 0 0.35rem;
   color: var(--admin-muted, var(--ink-dim));
-  font-size: 0.62rem;
+  font-size: 0.66rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
+/* A console header, not a poster: the sign-in page keeps the oversized
+   Block Berthold headline, but at 4.5rem it dwarfed every control here. */
 .admin-topbar h1,
 .admin-gate h1 {
   margin: 0;
   font-family: "Block Berthold", sans-serif;
-  font-size: clamp(2.6rem, 6vw, 4.5rem);
+  font-size: clamp(1.9rem, 3vw, 2.5rem);
   font-weight: 400;
-  line-height: 0.86;
-  letter-spacing: 0;
+  line-height: 1;
+  letter-spacing: 0.01em;
   text-transform: uppercase;
+}
+
+.gate-error {
+  margin: 1rem 0 0;
+  color: var(--admin-red, var(--red));
+  font-size: 0.8rem;
 }
 
 .button-primary,
 .button-secondary {
   min-height: 2.4rem;
   border-radius: 4px;
-  font-size: 0.68rem;
+  font-size: 0.72rem;
 }
 
 .button-primary {
@@ -520,14 +528,14 @@ a.button-primary {
   justify-content: center;
   padding: 0 1rem;
   border-radius: 4px;
-  font-size: 0.68rem;
+  font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.05em;
   text-decoration: none;
   text-transform: uppercase;
 }
 
-.button-primary:hover {
+.button-primary:hover:not(:disabled) {
   color: #000;
   background: #fff;
 }
@@ -538,7 +546,7 @@ a.button-primary {
   background: transparent;
 }
 
-.button-secondary:hover {
+.button-secondary:hover:not(:disabled) {
   border-color: rgba(215, 230, 244, 0.48);
   background: rgba(215, 230, 244, 0.05);
 }
@@ -546,7 +554,7 @@ a.button-primary {
 .button-secondary.compact {
   min-height: 2rem;
   padding-inline: 0.7rem;
-  font-size: 0.61rem;
+  font-size: 0.68rem;
 }
 
 .text-button {
@@ -555,16 +563,16 @@ a.button-primary {
   border: 0;
   color: var(--admin-muted, var(--ink-dim));
   background: transparent;
-  font-size: 0.61rem;
+  font-size: 0.72rem;
   letter-spacing: 0;
   text-transform: none;
 }
 
-.text-button:hover {
+.text-button:hover:not(:disabled) {
   color: var(--ink);
 }
 
-.text-button.danger:hover {
+.text-button.danger:hover:not(:disabled) {
   color: var(--admin-red);
 }
 
@@ -597,7 +605,7 @@ a.button-primary {
 .metric-strip span {
   overflow: hidden;
   color: var(--admin-muted);
-  font-size: 0.62rem;
+  font-size: 0.67rem;
   font-weight: 700;
   letter-spacing: 0.04em;
   text-overflow: ellipsis;
@@ -608,7 +616,7 @@ a.button-primary {
 .metric-strip strong {
   margin-top: 0.35rem;
   font-family: "Recoleta", Georgia, serif;
-  font-size: 1.55rem;
+  font-size: 1.85rem;
   font-weight: 400;
   font-variant-numeric: tabular-nums;
 }
@@ -625,7 +633,7 @@ a.button-primary {
   border-left-width: 3px;
   border-radius: 4px;
   background: var(--admin-surface);
-  font-size: 0.72rem;
+  font-size: 0.79rem;
 }
 
 .notice.success {
@@ -656,7 +664,7 @@ a.button-primary {
 .section-toolbar h2 {
   margin: 0;
   font-family: "Recoleta", Georgia, serif;
-  font-size: 1.25rem;
+  font-size: 1.35rem;
   font-weight: 400;
   letter-spacing: 0;
 }
@@ -664,7 +672,7 @@ a.button-primary {
 .section-toolbar p {
   margin: 0.3rem 0 0;
   color: var(--admin-muted);
-  font-size: 0.68rem;
+  font-size: 0.75rem;
 }
 
 .search-field {
@@ -683,7 +691,7 @@ a.button-primary {
 .search-field input {
   min-height: 2.4rem;
   margin: 0;
-  font-size: 0.75rem;
+  font-size: 0.82rem;
 }
 
 .user-list,
@@ -701,11 +709,15 @@ a.button-primary {
   border-bottom: 1px solid var(--admin-line);
 }
 
+.user-row-header > :last-child {
+  text-align: right;
+}
+
 .user-row-header {
   min-height: 2.2rem;
   padding: 0;
   color: var(--admin-muted);
-  font-size: 0.58rem;
+  font-size: 0.65rem;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -731,13 +743,13 @@ a.button-primary {
 }
 
 .user-identity strong {
-  font-size: 0.77rem;
+  font-size: 0.85rem;
 }
 
 .user-identity span {
   margin-top: 0.22rem;
   color: var(--admin-muted);
-  font-size: 0.68rem;
+  font-size: 0.75rem;
 }
 
 .role-badge {
@@ -750,7 +762,7 @@ a.button-primary {
   border-radius: 3px;
   color: var(--admin-muted);
   background: transparent;
-  font-size: 0.58rem;
+  font-size: 0.65rem;
   font-weight: 700;
   text-transform: uppercase;
 }
@@ -763,7 +775,7 @@ a.button-primary {
 
 .muted-value {
   color: var(--admin-muted);
-  font-size: 0.68rem;
+  font-size: 0.76rem;
 }
 
 .status {
@@ -772,7 +784,7 @@ a.button-primary {
   align-items: center;
   gap: 0.4rem;
   color: var(--admin-muted);
-  font-size: 0.68rem;
+  font-size: 0.76rem;
 }
 
 .status::before {
@@ -828,7 +840,7 @@ a.button-primary {
 .client-heading h3 {
   overflow: hidden;
   margin: 0;
-  font-size: 0.82rem;
+  font-size: 0.89rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -838,7 +850,7 @@ a.button-primary {
   overflow: hidden;
   margin-top: 0.38rem;
   color: var(--admin-muted);
-  font-size: 0.63rem;
+  font-size: 0.71rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -853,7 +865,7 @@ a.button-primary {
   overflow: hidden;
   color: var(--ink);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.62rem;
+  font-size: 0.7rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -865,7 +877,7 @@ a.button-primary {
 
 .client-meta span {
   color: var(--admin-muted);
-  font-size: 0.58rem;
+  font-size: 0.65rem;
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -873,7 +885,7 @@ a.button-primary {
 
 .client-meta strong {
   margin-top: 0.3rem;
-  font-size: 0.67rem;
+  font-size: 0.75rem;
   font-weight: 500;
   line-height: 1.4;
   text-transform: capitalize;
@@ -896,12 +908,12 @@ a.button-primary {
 
 .empty-state strong {
   color: var(--ink);
-  font-size: 0.8rem;
+  font-size: 0.88rem;
 }
 
 .empty-state span {
   margin-top: 0.35rem;
-  font-size: 0.68rem;
+  font-size: 0.76rem;
 }
 
 .empty-state button {
@@ -959,7 +971,7 @@ a.button-primary {
   line-height: 1;
 }
 
-.icon-button:hover {
+.icon-button:hover:not(:disabled) {
   border-color: var(--admin-line-strong);
   color: var(--ink);
 }
@@ -981,7 +993,7 @@ a.button-primary {
   color: var(--ink);
   background: rgba(215, 230, 244, 0.035);
   font: inherit;
-  font-size: 0.76rem;
+  font-size: 0.84rem;
 }
 
 .modal-form textarea {
@@ -1093,7 +1105,7 @@ a.button-primary {
 .admin-gate > p:last-child {
   margin: 1.25rem 0 0;
   color: var(--admin-muted, var(--ink-dim));
-  font-size: 0.76rem;
+  font-size: 0.85rem;
 }
 
 .gate-actions {
@@ -1169,8 +1181,7 @@ a.button-primary {
 
   .brand-label,
   .sidebar-account .avatar,
-  .account-copy,
-  .sidebar-account > .text-button {
+  .account-copy {
     display: none;
   }
 
@@ -1192,14 +1203,11 @@ a.button-primary {
     border: 0;
   }
 
-  .sidebar-account::after {
-    content: "Admin";
+  /* The collapsed header drops the account block, but sign out has to stay
+     reachable — it is the only way out of the console on a phone. */
+  .sidebar-account > .text-button {
     display: block;
-    color: var(--admin-muted);
-    font-size: 0.61rem;
-    font-weight: 700;
-    text-align: right;
-    text-transform: uppercase;
+    white-space: nowrap;
   }
 
   .admin-main {
@@ -1273,7 +1281,12 @@ a.button-primary {
 
 @media (max-width: 520px) {
   .admin-sidebar {
-    grid-template-columns: auto 1fr;
+    grid-template-columns: auto 1fr auto;
+    gap: 0.5rem;
+  }
+
+  .sidebar-account {
+    justify-self: end;
   }
 
   .admin-sidebar .brand-word {
@@ -1289,8 +1302,7 @@ a.button-primary {
     padding-inline: 0.55rem;
   }
 
-  .nav-count,
-  .sidebar-account {
+  .nav-count {
     display: none;
   }
 
