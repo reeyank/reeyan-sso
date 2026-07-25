@@ -42,6 +42,117 @@ adminApi.get("/audit", async (c) => {
   return c.json(await listAudit(limit, offset));
 });
 
+// Better Auth's /oauth2/get-clients only returns clients whose referenceId
+// matches clientReference() — "sso-admin" here. A client created any other way
+// (different reference, owned by a user, written before this config existed) is
+// live and can authenticate, but is invisible to the console and cannot be
+// edited or deleted through the plugin. This lists the whole table so the count
+// and the list can never disagree.
+const ADMIN_REFERENCE = "sso-admin";
+
+adminApi.get("/clients", async (c) => {
+  const result = await pool.query(
+    `select o."clientId", o.name, o.type, o."redirectUris", o."grantTypes",
+            o."tokenEndpointAuthMethod", o."referenceId", o."userId",
+            o.disabled, o."createdAt", u.email as "ownerEmail"
+       from "oauthClient" o
+       left join "user" u on u.id = o."userId"
+      order by o."createdAt" desc nulls last`,
+  );
+
+  return c.json({
+    clients: result.rows.map((row) => ({
+      client_id: row.clientId,
+      client_name: row.name,
+      type: row.type,
+      redirect_uris: row.redirectUris ?? [],
+      grant_types: row.grantTypes ?? [],
+      token_endpoint_auth_method: row.tokenEndpointAuthMethod,
+      disabled: row.disabled ?? false,
+      // Only these can be edited or have their secret rotated through the
+      // Better Auth endpoints; the rest have to be adopted first.
+      managed: row.referenceId === ADMIN_REFERENCE,
+      ownerEmail: row.ownerEmail,
+    })),
+  });
+});
+
+adminApi.post("/clients/adopt", async (c) => {
+  const { clientId } = await c.req.json<{ clientId?: string }>();
+  if (!clientId) return c.json({ message: "clientId is required." }, 400);
+
+  const result = await pool.query(
+    `update "oauthClient"
+        set "referenceId" = $1, "userId" = null, "updatedAt" = now()
+      where "clientId" = $2
+      returning name`,
+    [ADMIN_REFERENCE, clientId],
+  );
+  if (!result.rowCount) return c.json({ message: "Client not found." }, 404);
+
+  const session = c.get("session");
+  await recordAudit({
+    actorId: session.user.id,
+    actorEmail: session.user.email,
+    action: "client.adopt",
+    targetType: "client",
+    targetId: clientId,
+    targetLabel: result.rows[0].name,
+    ip: c.req.header("x-forwarded-for") ?? c.req.header("x-real-ip") ?? null,
+  });
+
+  return c.json({ success: true });
+});
+
+// Deleting through Better Auth drops the oauthClient row and leaves its tokens
+// and consents behind, and refuses outright for clients the admin does not own.
+adminApi.post("/clients/delete", async (c) => {
+  const { clientId } = await c.req.json<{ clientId?: string }>();
+  if (!clientId) return c.json({ message: "clientId is required." }, 400);
+
+  const existing = await pool.query(
+    `select name from "oauthClient" where "clientId" = $1`,
+    [clientId],
+  );
+  if (!existing.rowCount) return c.json({ message: "Client not found." }, 404);
+
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    await client.query(`delete from "oauthAccessToken" where "clientId" = $1`, [
+      clientId,
+    ]);
+    await client.query(`delete from "oauthRefreshToken" where "clientId" = $1`, [
+      clientId,
+    ]);
+    await client.query(`delete from "oauthConsent" where "clientId" = $1`, [
+      clientId,
+    ]);
+    await client.query(`delete from "oauthClient" where "clientId" = $1`, [
+      clientId,
+    ]);
+    await client.query("commit");
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  const session = c.get("session");
+  await recordAudit({
+    actorId: session.user.id,
+    actorEmail: session.user.email,
+    action: "client.delete",
+    targetType: "client",
+    targetId: clientId,
+    targetLabel: existing.rows[0].name,
+    ip: c.req.header("x-forwarded-for") ?? c.req.header("x-real-ip") ?? null,
+  });
+
+  return c.json({ success: true });
+});
+
 adminApi.get("/consents", async (c) => {
   const userId = c.req.query("userId");
   if (!userId) return c.json({ message: "userId is required." }, 400);
