@@ -22,6 +22,24 @@ export async function ensureAuditTable() {
   `);
 }
 
+// Tables Better Auth's CLI creates, not us. If a plugin was added and
+// `npm run migrate` was not re-run, the failure surfaces far from the cause —
+// a 500 on an unrelated screen — so name it at boot instead.
+export async function warnOnMissingTables() {
+  const required = ["user", "session", "oauthClient", "passkey"];
+  const result = await pool.query(
+    `select t.name from unnest($1::text[]) as t(name)
+      where to_regclass('public."' || t.name || '"') is null`,
+    [required],
+  );
+  if (result.rowCount) {
+    const missing = result.rows.map((row) => row.name).join(", ");
+    console.warn(
+      `[startup] missing table(s): ${missing} — run "npm run migrate" (docker compose exec sso npm run migrate)`,
+    );
+  }
+}
+
 export type AuditEntry = {
   actorId?: string | null;
   actorEmail?: string | null;

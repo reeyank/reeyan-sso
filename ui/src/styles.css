@@ -1998,3 +1998,94 @@ a.btn-deny {
 .link-button.add:hover:not(:disabled) {
   color: #fff;
 }
+
+/* Consents view */
+.consent-row {
+  display: grid;
+  min-height: 4.5rem;
+  grid-template-columns: minmax(200px, 1.6fr) minmax(160px, 1.3fr) minmax(150px, 1.2fr) 110px 100px;
+  gap: 1rem;
+  align-items: center;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--admin-line);
+}
+
+.consent-row-header {
+  min-height: 2.2rem;
+  padding: 0;
+  color: var(--admin-muted);
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.consent-row-header > :last-child {
+  text-align: right;
+}
+
+.consent-client {
+  min-width: 0;
+}
+
+.consent-client strong {
+  display: block;
+  overflow: hidden;
+  font-size: 0.8rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.consent-client code {
+  display: block;
+  overflow: hidden;
+  margin-top: 0.22rem;
+  color: var(--admin-muted);
+  font-size: 0.65rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scope-tags {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.scope-tags span {
+  display: inline-flex;
+  min-height: 1.35rem;
+  align-items: center;
+  padding: 0 0.4rem;
+  border: 1px solid var(--admin-line);
+  border-radius: 3px;
+  color: var(--admin-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.62rem;
+}
+
+@media (max-width: 1080px) {
+  .consent-row {
+    grid-template-columns: minmax(160px, 1.5fr) minmax(140px, 1.2fr) 100px 90px;
+  }
+
+  .consent-row > :nth-child(3) {
+    display: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .consent-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.5rem 1rem;
+  }
+
+  .consent-row-header {
+    display: none;
+  }
+
+  .consent-row > :nth-child(4) {
+    grid-column: 1;
+  }
+}
