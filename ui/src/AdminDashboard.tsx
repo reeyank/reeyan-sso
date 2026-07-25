@@ -6,6 +6,7 @@ import {
   type FormEvent,
   type ReactNode,
 } from "react";
+import { formatDate, formatDateTime, initials } from "./format";
 
 type AdminUser = {
   id: string;
@@ -131,32 +132,6 @@ const apiRequest = <T,>(path: string, options?: RequestInit) =>
 
 const adminRequest = <T,>(path: string, options?: RequestInit) =>
   request<T>(`${ADMIN_API}${path}`, options);
-
-function initials(name: string, email: string) {
-  const source = name.trim() || email;
-  return source
-    .split(/[\s@._-]+/)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join("");
-}
-
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat("en", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  }).format(new Date(value));
-}
-
-function formatDateTime(value: string) {
-  return new Intl.DateTimeFormat("en", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(new Date(value));
-}
 
 function scopeList(scopes: Consent["scopes"]) {
   if (!scopes) return [];
@@ -1094,9 +1069,6 @@ export function AdminDashboard() {
             <div className="client-list">
               {clients.map((client) => (
                 <article className="client-row" key={client.client_id}>
-                  <div className="client-mark">
-                    {initials(client.client_name ?? "Application", client.client_id)}
-                  </div>
                   <div className="client-primary">
                     <div className="client-heading">
                       <h3>{client.client_name ?? "Untitled application"}</h3>
