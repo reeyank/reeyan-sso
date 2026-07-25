@@ -9,12 +9,38 @@ import {
   type Passkey,
 } from "./auth-client";
 
+// Immediate fallback so the consent screen renders without waiting on a
+// request; /api/scopes then fills in descriptions for custom scopes too.
 const scopeLabels: Record<string, string> = {
   openid: "verify your identity",
   profile: "read your name and profile info",
   email: "read your email address",
   offline_access: "stay signed in on your behalf",
 };
+
+function useScopeLabels() {
+  const [labels, setLabels] = useState(scopeLabels);
+  useEffect(() => {
+    void fetch("/api/scopes")
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (!data?.scopes) return;
+        setLabels((current) => ({
+          ...current,
+          ...Object.fromEntries(
+            data.scopes.map((scope: { value: string; description: string }) => [
+              scope.value,
+              scope.description,
+            ]),
+          ),
+        }));
+      })
+      .catch(() => {
+        // Falls back to the built-in labels above.
+      });
+  }, []);
+  return labels;
+}
 
 function PageFrame({
   title,
@@ -324,6 +350,7 @@ function defaultPasskeyName() {
 }
 
 function AccountPage() {
+  const labels = useScopeLabels();
   const [user, setUser] = useState<AccountUser | null>(null);
   const [sessionCount, setSessionCount] = useState<number | null>(null);
   const [consents, setConsents] = useState<Consent[]>([]);
@@ -556,7 +583,7 @@ function AccountPage() {
                   <strong>{consent.clientName ?? consent.clientId}</strong>
                   <span>
                     {scopeList(consent.scopes)
-                      .map((scope) => scopeLabels[scope] ?? scope)
+                      .map((scope) => labels[scope] ?? scope)
                       .join(" · ") || "no scopes"}
                   </span>
                 </div>
@@ -597,6 +624,7 @@ function AccountPage() {
 }
 
 function ConsentPage() {
+  const labels = useScopeLabels();
   const query = new URLSearchParams(window.location.search);
   const clientName = query.get("client_name") ?? "this application";
   const scopes = (query.get("scope") ?? "openid profile email").split(" ");
@@ -650,7 +678,7 @@ function ConsentPage() {
     >
       <ul className="scopes">
         {scopes.map((scope, index) => (
-          <li key={`${scope}-${index}`}>{scopeLabels[scope] ?? scope}</li>
+          <li key={`${scope}-${index}`}>{labels[scope] ?? scope}</li>
         ))}
       </ul>
 

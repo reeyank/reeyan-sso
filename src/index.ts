@@ -3,6 +3,7 @@ import { serve } from "@hono/node-server";
 import { auth } from "./auth.js";
 import { adminApi } from "./admin-api.js";
 import { ensureAuditTable, warnOnMissingTables } from "./audit.js";
+import { ensureScopeTable, reloadScopes, scopesFresh } from "./scopes.js";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { readFileSync } from "node:fs";
 
@@ -34,10 +35,17 @@ app.get("/sign-up", (c) => c.html(frontend));
 app.get("/consent", (c) => c.html(frontend));
 app.get("/admin", (c) => c.html(frontend));
 
+// Scope names are already public in the discovery document; this adds the
+// human descriptions so the consent screen and admin editor stay in step with
+// src/scopes.ts instead of keeping their own copies.
+app.get("/api/scopes", async (c) => c.json({ scopes: await scopesFresh() }));
+
 app.get("/health", (c) => c.text("ok"));
 
 const port = Number(process.env.PORT ?? 3000);
 await ensureAuditTable();
+await ensureScopeTable();
+await reloadScopes();
 await warnOnMissingTables();
 serve({ fetch: app.fetch, port });
 console.log(`reeyan-sso listening on :${port}`);

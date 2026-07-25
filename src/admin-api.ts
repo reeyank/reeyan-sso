@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { auth } from "./auth.js";
 import { pool } from "./db.js";
 import { listAudit, recordAudit, lookupUserLabel } from "./audit.js";
+import { currentScopes, reloadScopes } from "./scopes.js";
 
 // Better Auth's /oauth2/get-consents and /oauth2/delete-consent are hard-scoped
 // to session.user.id — an admin cannot see or revoke anyone else's grants
@@ -47,6 +48,173 @@ adminApi.get("/stats", async (c) => {
       ${hasPasskeys ? `, (select count(*)::int from passkey) as passkeys` : ""}
   `);
   return c.json({ passkeys: null, ...result.rows[0] });
+});
+
+// Scope definitions live in the database and the OAuth plugin reads them per
+// request, so these writes take effect immediately.
+const SCOPE_PATTERN = /^[A-Za-z0-9._:/-]{1,128}$/;
+
+async function clientsUsingScope(value: string) {
+  const result = await pool.query(
+    `select name from "oauthClient" where scopes ? $1 order by name`,
+    [value],
+  );
+  return result.rows.map((row) => row.name as string);
+}
+
+adminApi.get("/scopes", async (c) => {
+  const result = await pool.query(
+    `select s.value, s.description, s.required, s."createdAt",
+            (select count(*)::int from "oauthClient" o where o.scopes ? s.value)
+              as "clientCount",
+            (select count(*)::int from "oauthConsent" k where k.scopes ? s.value)
+              as "grantCount"
+       from oauth_scope s
+      order by s.required desc, s.value asc`,
+  );
+  return c.json({ scopes: result.rows });
+});
+
+adminApi.post("/scopes", async (c) => {
+  const { value, description } = await c.req.json<{
+    value?: string;
+    description?: string;
+  }>();
+  const name = (value ?? "").trim();
+
+  if (!SCOPE_PATTERN.test(name)) {
+    return c.json(
+      {
+        message:
+          "Use letters, numbers, and . _ : / - only (no spaces). Scope names are case sensitive.",
+      },
+      400,
+    );
+  }
+  if (currentScopes().some((scope) => scope.value === name)) {
+    return c.json({ message: `${name} already exists.` }, 409);
+  }
+
+  await pool.query(
+    `insert into oauth_scope (value, description) values ($1, $2)`,
+    [name, (description ?? "").trim()],
+  );
+  await reloadScopes();
+
+  const session = c.get("session");
+  await recordAudit({
+    actorId: session.user.id,
+    actorEmail: session.user.email,
+    action: "scope.create",
+    targetType: "scope",
+    targetId: name,
+    targetLabel: name,
+    detail: { description },
+    ip: c.req.header("x-forwarded-for") ?? c.req.header("x-real-ip") ?? null,
+  });
+
+  return c.json({ success: true });
+});
+
+adminApi.post("/scopes/update", async (c) => {
+  const { value, description } = await c.req.json<{
+    value?: string;
+    description?: string;
+  }>();
+  if (!value) return c.json({ message: "value is required." }, 400);
+
+  // Renaming would orphan every client and grant holding the old name, so only
+  // the description is editable.
+  const result = await pool.query(
+    `update oauth_scope set description = $2 where value = $1 returning value`,
+    [value, (description ?? "").trim()],
+  );
+  if (!result.rowCount) return c.json({ message: "Scope not found." }, 404);
+  await reloadScopes();
+
+  const session = c.get("session");
+  await recordAudit({
+    actorId: session.user.id,
+    actorEmail: session.user.email,
+    action: "scope.update",
+    targetType: "scope",
+    targetId: value,
+    targetLabel: value,
+    detail: { description },
+    ip: c.req.header("x-forwarded-for") ?? c.req.header("x-real-ip") ?? null,
+  });
+
+  return c.json({ success: true });
+});
+
+adminApi.post("/scopes/delete", async (c) => {
+  const { value, force } = await c.req.json<{ value?: string; force?: boolean }>();
+  if (!value) return c.json({ message: "value is required." }, 400);
+
+  const scope = currentScopes().find((item) => item.value === value);
+  if (!scope) return c.json({ message: "Scope not found." }, 404);
+  if (scope.required) {
+    return c.json(
+      { message: `${value} is required by OpenID Connect and cannot be removed.` },
+      400,
+    );
+  }
+
+  // Removing a scope a client still lists makes every one of its authorize
+  // requests fail with invalid_scope, so say so before it happens.
+  const inUse = await clientsUsingScope(value);
+  if (inUse.length && !force) {
+    return c.json(
+      {
+        message: `${value} is still allowed by ${inUse.length} application${
+          inUse.length === 1 ? "" : "s"
+        } (${inUse.slice(0, 3).join(", ")}${inUse.length > 3 ? "…" : ""}). Remove it from them first, or confirm to strip it everywhere.`,
+        inUse,
+      },
+      409,
+    );
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    if (inUse.length) {
+      // Strip it from clients and existing grants so nothing references a
+      // scope the provider no longer knows about.
+      await client.query(
+        `update "oauthClient" set scopes = (scopes - $1), "updatedAt" = now()
+          where scopes ? $1`,
+        [value],
+      );
+      await client.query(
+        `update "oauthConsent" set scopes = (scopes - $1), "updatedAt" = now()
+          where scopes ? $1`,
+        [value],
+      );
+    }
+    await client.query(`delete from oauth_scope where value = $1`, [value]);
+    await client.query("commit");
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
+  await reloadScopes();
+
+  const session = c.get("session");
+  await recordAudit({
+    actorId: session.user.id,
+    actorEmail: session.user.email,
+    action: "scope.delete",
+    targetType: "scope",
+    targetId: value,
+    targetLabel: value,
+    detail: inUse.length ? { strippedFrom: inUse } : undefined,
+    ip: c.req.header("x-forwarded-for") ?? c.req.header("x-real-ip") ?? null,
+  });
+
+  return c.json({ success: true });
 });
 
 adminApi.get("/audit", async (c) => {
