@@ -961,7 +961,7 @@ export function AdminDashboard() {
             [
               ["users", "Users", stats?.totalUsers],
               ["applications", "Applications", stats?.clients],
-              ["consents", "Consents", stats?.consents],
+              ["consents", "Consents", undefined],
               ["audit", "Audit log", undefined],
               ["endpoints", "Endpoints", undefined],
             ] as [View, string, number | undefined][]
