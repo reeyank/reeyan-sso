@@ -26,6 +26,11 @@ type OAuthClient = {
   grant_types?: string[];
   token_endpoint_auth_method?: string;
   type?: string;
+  disabled?: boolean;
+  // False for clients Better Auth will not let this admin edit: they must be
+  // adopted into the admin catalog first.
+  managed?: boolean;
+  ownerEmail?: string | null;
 };
 
 type UserSession = {
@@ -413,9 +418,12 @@ export function AdminDashboard() {
     setUserTotal(data.total);
   }, [debouncedSearch, searchField, userPage]);
 
+  // Reads the whole oauthClient table rather than /oauth2/get-clients, which
+  // hides anything outside the admin catalog and made the OAuth clients metric
+  // disagree with this list.
   const loadClients = useCallback(async () => {
-    const data = await apiRequest<OAuthClient[] | null>("/oauth2/get-clients");
-    setClients(data ?? []);
+    const data = await adminRequest<{ clients: OAuthClient[] }>("/clients");
+    setClients(data.clients ?? []);
   }, []);
 
   const loadStats = useCallback(async () => {
@@ -778,15 +786,30 @@ export function AdminDashboard() {
     await run(
       client.client_id,
       async () => {
-        await apiRequest("/oauth2/delete-client", {
+        // Goes through the admin API so it also clears the client's tokens and
+        // consents, and works for clients outside the admin catalog.
+        await adminRequest("/clients/delete", {
           method: "POST",
-          body: JSON.stringify({ client_id: client.client_id }),
+          body: JSON.stringify({ clientId: client.client_id }),
         });
         await Promise.all([loadClients(), loadStats()]);
       },
       "Application deleted.",
     );
   }
+
+  const adoptClient = (client: OAuthClient) =>
+    run(
+      client.client_id,
+      async () => {
+        await adminRequest("/clients/adopt", {
+          method: "POST",
+          body: JSON.stringify({ clientId: client.client_id }),
+        });
+        await loadClients();
+      },
+      `${client.client_name ?? "Application"} is now managed here.`,
+    );
 
   async function rotateSecret(client: OAuthClient) {
     if (
@@ -868,7 +891,7 @@ export function AdminDashboard() {
             [
               ["users", "Users", stats?.totalUsers],
               ["applications", "Applications", stats?.clients],
-              ["audit", "Audit log", auditTotal || undefined],
+              ["audit", "Audit log", undefined],
               ["endpoints", "Endpoints", undefined],
             ] as [View, string, number | undefined][]
           ).map(([view, label, count]) => (
@@ -1064,7 +1087,7 @@ export function AdminDashboard() {
             <div className="section-toolbar">
               <div>
                 <h2>OAuth clients</h2>
-                <p>Applications registered by this administrator</p>
+                <p>Every client registered against this identity provider</p>
               </div>
             </div>
 
@@ -1078,6 +1101,21 @@ export function AdminDashboard() {
                     <div className="client-heading">
                       <h3>{client.client_name ?? "Untitled application"}</h3>
                       <span className="role-badge user">{client.type ?? "web"}</span>
+                      {client.managed === false ? (
+                        <span
+                          className="role-badge unmanaged"
+                          title={
+                            client.ownerEmail
+                              ? `Registered by ${client.ownerEmail}`
+                              : "Not in the admin catalog"
+                          }
+                        >
+                          unmanaged
+                        </span>
+                      ) : null}
+                      {client.disabled ? (
+                        <span className="role-badge unmanaged">disabled</span>
+                      ) : null}
                     </div>
                     <code>{client.client_id}</code>
                     <div className="uri-list">
@@ -1095,24 +1133,38 @@ export function AdminDashboard() {
                     </strong>
                   </div>
                   <div className="row-actions">
-                    <button
-                      className="button-secondary compact"
-                      type="button"
-                      disabled={busyId === client.client_id}
-                      onClick={() => setEditingClient(client)}
-                    >
-                      Edit
-                    </button>
-                    {client.token_endpoint_auth_method !== "none" ? (
+                    {client.managed === false ? (
                       <button
-                        className="text-button"
+                        className="button-secondary compact"
                         type="button"
                         disabled={busyId === client.client_id}
-                        onClick={() => void rotateSecret(client)}
+                        title="Move this client into the admin catalog so it can be edited here"
+                        onClick={() => void adoptClient(client)}
                       >
-                        Rotate secret
+                        Adopt
                       </button>
-                    ) : null}
+                    ) : (
+                      <>
+                        <button
+                          className="button-secondary compact"
+                          type="button"
+                          disabled={busyId === client.client_id}
+                          onClick={() => setEditingClient(client)}
+                        >
+                          Edit
+                        </button>
+                        {client.token_endpoint_auth_method !== "none" ? (
+                          <button
+                            className="text-button"
+                            type="button"
+                            disabled={busyId === client.client_id}
+                            onClick={() => void rotateSecret(client)}
+                          >
+                            Rotate secret
+                          </button>
+                        ) : null}
+                      </>
+                    )}
                     <button
                       className="text-button danger"
                       type="button"

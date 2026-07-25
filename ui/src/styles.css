@@ -1761,3 +1761,9 @@ a.button-primary {
     grid-column: 1 / -1;
   }
 }
+
+.role-badge.unmanaged {
+  border-color: rgba(255, 125, 120, 0.35);
+  color: var(--admin-red);
+  background: rgba(255, 125, 120, 0.06);
+}
