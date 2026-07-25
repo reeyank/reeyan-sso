@@ -14,7 +14,7 @@
 }
 
 :root {
-  --bg: #040507;
+  --bg: #080a0d;
   --ink: #d7e6f4;
   --ink-dim: rgba(215, 230, 244, 0.55);
   --ink-line: rgba(215, 230, 244, 0.22);
@@ -98,19 +98,19 @@ body::after {
 }
 
 .eyebrow {
-  margin: 0 0 0.25rem;
+  margin: 0 0 0.6rem;
   color: var(--ink);
   font-family: "Recoleta", Georgia, serif;
-  font-size: clamp(1.8rem, 7vw, 3rem);
+  font-size: clamp(1.5rem, 4vw, 1.95rem);
   line-height: 1;
   text-align: center;
 }
 
 .headline {
-  margin: 0 0 clamp(2rem, 6vh, 3rem);
+  margin: 0 0 clamp(1.75rem, 5vh, 2.5rem);
   color: var(--ink);
   font-family: "Block Berthold", sans-serif;
-  font-size: clamp(4rem, 18vw, 7rem);
+  font-size: clamp(2.6rem, 8vw, 4rem);
   font-weight: 400;
   line-height: 0.86;
   letter-spacing: 0;
@@ -119,11 +119,12 @@ body::after {
 }
 
 .panel {
-  width: min(100%, 520px);
+  width: min(100%, 460px);
   margin-inline: auto;
-  padding: 0;
-  border: 0;
-  background: transparent;
+  padding: 1.75rem;
+  border: 1px solid rgba(215, 230, 244, 0.13);
+  border-radius: 8px;
+  background: #13171c;
   text-align: left;
 }
 
@@ -131,7 +132,7 @@ label {
   display: block;
   margin-bottom: 0.4rem;
   color: var(--ink-dim);
-  font-size: 0.68rem;
+  font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -139,15 +140,15 @@ label {
 
 input {
   width: 100%;
-  min-height: 2.8rem;
-  margin-bottom: 1rem;
-  padding: 0.75rem 0.85rem;
+  min-height: 3rem;
+  margin-bottom: 1.15rem;
+  padding: 0.8rem 0.9rem;
   border: 1px solid var(--ink-line);
   border-radius: 4px;
   color: var(--ink);
   background: rgba(215, 230, 244, 0.035);
   font: inherit;
-  font-size: 0.9rem;
+  font-size: 0.95rem;
 }
 
 input:focus {
@@ -158,14 +159,14 @@ input:focus {
 
 button {
   display: inline-flex;
-  min-height: 2.75rem;
+  min-height: 2.9rem;
   align-items: center;
   justify-content: center;
   padding: 0 1rem;
   border-radius: 4px;
   cursor: pointer;
   font: inherit;
-  font-size: 0.76rem;
+  font-size: 0.8rem;
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -217,9 +218,9 @@ button:disabled {
 
 .error {
   display: none;
-  margin: -0.35rem 0 1rem;
+  margin: -0.4rem 0 1rem;
   color: var(--red);
-  font-size: 0.78rem;
+  font-size: 0.82rem;
 }
 
 .error.visible {
@@ -234,10 +235,10 @@ button:disabled {
 }
 
 .scopes li {
-  padding: 0.65rem 0;
+  padding: 0.7rem 0;
   border-bottom: 1px solid rgba(215, 230, 244, 0.12);
   color: var(--ink);
-  font-size: 0.88rem;
+  font-size: 0.92rem;
   line-height: 1.45;
 }
 
@@ -268,7 +269,7 @@ button:disabled {
 .footer-note {
   margin-top: 1.35rem;
   color: var(--ink-dim);
-  font-size: 0.68rem;
+  font-size: 0.76rem;
   letter-spacing: 0.02em;
   text-align: center;
 }
@@ -287,7 +288,7 @@ button:disabled {
   }
 
   .headline {
-    font-size: clamp(3.7rem, 23vw, 6rem);
+    font-size: clamp(2.4rem, 13vw, 3.2rem);
   }
 
   .panel {
@@ -303,6 +304,9 @@ button:disabled {
 body.admin-view {
   min-width: 320px;
   background: #080a0d;
+  /* Reserve the scrollbar track so a short tab (Applications) and a long one
+     (Users) do not shift the layout sideways when you switch between them. */
+  scrollbar-gutter: stable;
 }
 
 body.admin-view::before {
@@ -330,6 +334,7 @@ body.admin-view #root {
   --admin-green: #78d7a3;
   --admin-red: #ff7d78;
   display: grid;
+  width: 100%;
   min-height: 100vh;
   min-height: 100dvh;
   grid-template-columns: 236px minmax(0, 1fr);
@@ -468,8 +473,32 @@ body.admin-view #root {
 }
 
 .admin-main {
+  display: flex;
   min-width: 0;
+  flex-direction: column;
   padding: 2rem clamp(1.5rem, 4vw, 4rem) 4rem;
+}
+
+/* Let the table area absorb the leftover height so a two-row directory and a
+   fifty-row one both fill the screen instead of floating at the top. */
+.data-section {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.user-list,
+.client-list {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+
+/* Stretch the empty state over the freed height instead of leaving a stray
+   rule line halfway down the page. */
+.empty-state {
+  flex: 1;
 }
 
 .admin-topbar {
@@ -578,7 +607,7 @@ a.button-primary {
 
 .metric-strip {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   margin: 1.25rem 0 2.5rem;
   border-top: 1px solid var(--admin-line);
   border-bottom: 1px solid var(--admin-line);
@@ -1145,8 +1174,11 @@ a.button-primary {
     grid-template-columns: 190px minmax(0, 1fr);
   }
 
+  /* At 820px the old minimums (613px + gaps) exceeded the content column and
+     pushed the action buttons past the viewport edge. */
   .user-row {
-    grid-template-columns: minmax(210px, 1.7fr) 80px 85px minmax(190px, 1fr);
+    grid-template-columns: minmax(150px, 1.6fr) 74px 80px minmax(170px, 1fr);
+    gap: 0.75rem;
   }
 
   .user-row > :nth-child(3) {
@@ -1154,7 +1186,8 @@ a.button-primary {
   }
 
   .client-row {
-    grid-template-columns: 2.75rem minmax(220px, 1.5fr) minmax(200px, 1fr);
+    grid-template-columns: 2.75rem minmax(160px, 1.5fr) minmax(180px, 1fr);
+    gap: 0.75rem;
   }
 
   .client-meta {
@@ -1185,15 +1218,28 @@ a.button-primary {
     display: none;
   }
 
+  /* Four tabs no longer fit a phone header, so the strip scrolls sideways
+     instead of pushing Sign out off the screen. */
+  .admin-sidebar > * {
+    min-width: 0;
+  }
+
   .admin-nav {
     display: flex;
-    justify-content: center;
+    justify-content: flex-start;
     margin: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .admin-nav::-webkit-scrollbar {
+    display: none;
   }
 
   .admin-nav button {
     width: auto;
-    min-width: 6rem;
+    flex: 0 0 auto;
+    min-width: 5rem;
   }
 
   .sidebar-account {
@@ -1308,11 +1354,14 @@ a.button-primary {
 
   .admin-topbar {
     min-height: 5rem;
-    gap: 1rem;
+    flex-wrap: wrap;
+    gap: 0.85rem;
   }
 
+  /* Predates the console type rescale — 2.7rem was larger than the desktop
+     size and pushed the action button off a 390px screen. */
   .admin-topbar h1 {
-    font-size: 2.7rem;
+    font-size: 1.85rem;
   }
 
   .metric-strip {
@@ -1369,5 +1418,346 @@ a.button-primary {
 @media (prefers-reduced-motion: reduce) {
   .loading-line::after {
     animation: none;
+  }
+}
+
+/* Pagination, manage drawer, audit log, endpoints */
+.pager {
+  display: flex;
+  min-height: 3.25rem;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-top: 1rem;
+  color: var(--admin-muted);
+  font-size: 0.72rem;
+}
+
+.pager-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.pager-position {
+  font-variant-numeric: tabular-nums;
+}
+
+.toolbar-controls {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.75rem;
+}
+
+.field-toggle {
+  margin: 0;
+}
+
+.field-toggle > span {
+  display: block;
+  margin-bottom: 0.35rem;
+  color: var(--admin-muted);
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.field-toggle select {
+  min-height: 2.4rem;
+  padding: 0 0.6rem;
+  border: 1px solid var(--admin-line-strong);
+  border-radius: 4px;
+  color: var(--ink);
+  background: rgba(215, 230, 244, 0.035);
+  font: inherit;
+  font-size: 0.75rem;
+}
+
+.modal-wide {
+  width: min(100%, 680px);
+}
+
+.modal-copy {
+  margin: 0 0 1.15rem;
+  color: var(--admin-muted);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.modal-copy code {
+  color: var(--ink);
+  font-size: 0.74rem;
+}
+
+.manage-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--admin-line);
+}
+
+.manage-summary strong,
+.manage-summary span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.manage-summary strong {
+  font-size: 0.85rem;
+}
+
+.manage-summary span {
+  margin-top: 0.25rem;
+  color: var(--admin-muted);
+  font-size: 0.72rem;
+  text-transform: capitalize;
+}
+
+.manage-block {
+  padding: 1.25rem 0;
+  border-bottom: 1px solid var(--admin-line);
+}
+
+.manage-block:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.manage-block > header {
+  display: flex;
+  min-height: 1.75rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.manage-block h3 {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.manage-empty {
+  margin: 0;
+  color: var(--admin-muted);
+  font-size: 0.76rem;
+}
+
+.manage-list {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.manage-list li {
+  display: flex;
+  min-height: 3rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--admin-line);
+  border-radius: 4px;
+  background: var(--admin-surface);
+}
+
+.manage-list li > div {
+  min-width: 0;
+}
+
+.manage-list strong,
+.manage-list span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.manage-list strong {
+  font-size: 0.78rem;
+}
+
+.manage-list span {
+  margin-top: 0.2rem;
+  color: var(--admin-muted);
+  font-size: 0.68rem;
+}
+
+.manage-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.manage-hint {
+  margin: 0.85rem 0 0;
+  color: var(--admin-muted);
+  font-size: 0.68rem;
+}
+
+.button-danger {
+  min-height: 2.4rem;
+  border: 1px solid rgba(255, 125, 120, 0.5);
+  border-radius: 4px;
+  color: var(--admin-red);
+  background: rgba(255, 125, 120, 0.08);
+  font-size: 0.72rem;
+}
+
+.button-danger:hover:not(:disabled) {
+  color: #0b0c0e;
+  background: var(--admin-red);
+}
+
+.audit-row {
+  display: grid;
+  min-height: 3.25rem;
+  grid-template-columns: 130px minmax(150px, 1fr) 150px minmax(150px, 1fr) minmax(180px, 1.4fr);
+  gap: 1rem;
+  align-items: center;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--admin-line);
+}
+
+.audit-row-header {
+  min-height: 2.2rem;
+  padding: 0;
+  color: var(--admin-muted);
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.audit-row > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audit-actor,
+.audit-target {
+  font-size: 0.74rem;
+}
+
+.audit-detail {
+  color: var(--admin-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.67rem;
+}
+
+.action-badge {
+  display: inline-flex;
+  width: max-content;
+  min-height: 1.45rem;
+  align-items: center;
+  padding: 0 0.45rem;
+  border: 1px solid var(--admin-line-strong);
+  border-radius: 3px;
+  color: var(--admin-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.63rem;
+}
+
+.action-badge.client {
+  border-color: rgba(215, 230, 244, 0.3);
+  color: var(--ink);
+}
+
+.action-badge.session,
+.action-badge.consent {
+  border-color: rgba(255, 125, 120, 0.35);
+  color: var(--admin-red);
+}
+
+.endpoint-list {
+  border-top: 1px solid var(--admin-line-strong);
+}
+
+.endpoint-row {
+  display: grid;
+  min-height: 3.5rem;
+  grid-template-columns: 150px minmax(0, 1fr) auto;
+  gap: 1rem;
+  align-items: center;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--admin-line);
+}
+
+.endpoint-row > span {
+  color: var(--admin-muted);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.endpoint-row code {
+  overflow: hidden;
+  font-size: 0.75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (min-width: 761px) and (max-width: 1080px) {
+  .metric-strip {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .metric-strip > div:nth-child(3) {
+    border-right: 0;
+  }
+
+  .metric-strip > div:nth-child(-n + 3) {
+    border-bottom: 1px solid var(--admin-line);
+  }
+
+  .audit-row {
+    grid-template-columns: 110px minmax(120px, 1fr) 130px minmax(120px, 1fr);
+  }
+
+  .audit-row > :nth-child(5) {
+    display: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .toolbar-controls {
+    width: 100%;
+  }
+
+  .search-field {
+    flex: 1;
+  }
+
+  .audit-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.4rem 1rem;
+  }
+
+  .audit-row-header {
+    display: none;
+  }
+
+  .audit-row > :nth-child(4) {
+    grid-column: 1;
+  }
+
+  .endpoint-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .endpoint-row > span {
+    grid-column: 1 / -1;
   }
 }
