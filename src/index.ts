@@ -21,7 +21,16 @@ app.on(["GET", "POST"], "/api/auth/**", (c) => auth.handler(c.req.raw));
 // OAuth consents).
 app.route("/api/admin", adminApi);
 
+// Gate the account page here rather than in the client so a signed-out visitor
+// never renders it at all — no flash of account chrome before the redirect.
+app.get("/", async (c) => {
+  const session = await auth.api.getSession({ headers: c.req.raw.headers });
+  if (!session) return c.redirect("/sign-in?callbackURL=%2F");
+  return c.html(frontend);
+});
+
 app.get("/sign-in", (c) => c.html(frontend));
+app.get("/sign-up", (c) => c.html(frontend));
 app.get("/consent", (c) => c.html(frontend));
 app.get("/admin", (c) => c.html(frontend));
 
