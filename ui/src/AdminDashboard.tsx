@@ -27,6 +27,7 @@ type OAuthClient = {
   grant_types?: string[];
   token_endpoint_auth_method?: string;
   type?: string;
+  scope?: string;
   disabled?: boolean;
   // False for clients Better Auth will not let this admin edit: they must be
   // adopted into the admin catalog first.
@@ -105,6 +106,18 @@ const API = "/api/auth";
 const ADMIN_API = "/api/admin";
 const PAGE_SIZE = 25;
 const CONSENT_PAGE_SIZE = 25;
+
+// What this provider advertises in its discovery document. openid is not
+// optional — it is what makes the client an OIDC client at all.
+const SUPPORTED_SCOPES = [
+  { value: "openid", hint: "Required. Issues an ID token.", required: true },
+  { value: "profile", hint: "Name and profile fields." },
+  { value: "email", hint: "Email address and verification state." },
+  {
+    value: "offline_access",
+    hint: "Issues a refresh token so the app can stay signed in.",
+  },
+];
 const AUDIT_PAGE_SIZE = 50;
 
 async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
@@ -267,6 +280,31 @@ function Pager({
         </button>
       </div>
     </div>
+  );
+}
+
+function ScopePicker({ selected }: { selected: string[] }) {
+  return (
+    <fieldset className="scope-picker">
+      <legend>Scopes</legend>
+      {SUPPORTED_SCOPES.map((scope) => (
+        <label key={scope.value}>
+          <input
+            type="checkbox"
+            name="scopes"
+            value={scope.value}
+            defaultChecked={scope.required || selected.includes(scope.value)}
+            disabled={scope.required}
+          />
+          <span>
+            <code>{scope.value}</code>
+            <small>{scope.hint}</small>
+          </span>
+        </label>
+      ))}
+      {/* A disabled checkbox is not submitted, so openid rides along here. */}
+      <input type="hidden" name="scopes" value="openid" />
+    </fieldset>
   );
 }
 
@@ -786,6 +824,12 @@ export function AdminDashboard() {
   }
 
   function readClientForm(data: FormData) {
+    // Checkbox order plus the hidden openid field would otherwise decide how
+    // the scope string reads; sort it into the documented order instead.
+    const picked = new Set(data.getAll("scopes").map(String));
+    const scopes = SUPPORTED_SCOPES.map((scope) => scope.value).filter((value) =>
+      picked.has(value),
+    );
     return {
       client_name: String(data.get("name")),
       redirect_uris: String(data.get("redirectUris"))
@@ -793,6 +837,7 @@ export function AdminDashboard() {
         .map((value) => value.trim())
         .filter(Boolean),
       type: String(data.get("applicationType")),
+      scope: scopes.join(" "),
     };
   }
 
@@ -808,9 +853,10 @@ export function AdminDashboard() {
           method: "POST",
           body: JSON.stringify({
             ...form,
-            scope: "openid profile email",
             token_endpoint_auth_method: isPublic ? "none" : "client_secret_basic",
-            grant_types: ["authorization_code", "refresh_token"],
+            grant_types: form.scope.includes("offline_access")
+              ? ["authorization_code", "refresh_token"]
+              : ["authorization_code"],
             response_types: ["code"],
           }),
         });
@@ -834,7 +880,14 @@ export function AdminDashboard() {
           method: "POST",
           body: JSON.stringify({
             client_id: editingClient.client_id,
-            update: form,
+            update: {
+              ...form,
+              // refresh_token is only meaningful with offline_access, so the
+              // two are kept consistent rather than drifting apart.
+              grant_types: form.scope.includes("offline_access")
+                ? ["authorization_code", "refresh_token"]
+                : ["authorization_code"],
+            },
           }),
         });
         await loadClients();
@@ -1197,7 +1250,13 @@ export function AdminDashboard() {
                     </div>
                   </div>
                   <div className="client-meta">
-                    <span>Grant</span>
+                    <span>Scopes</span>
+                    <div className="scope-tags">
+                      {(client.scope ?? "").split(/\s+/).filter(Boolean).map((scope) => (
+                        <span key={scope}>{scope}</span>
+                      ))}
+                    </div>
+                    <span className="meta-gap">Grant</span>
                     <strong>
                       {(client.grant_types ?? ["authorization_code"])
                         .map((grant) => grant.replaceAll("_", " "))
@@ -1879,6 +1938,7 @@ export function AdminDashboard() {
                 <option value="native">Native app (public with PKCE)</option>
               </select>
             </label>
+            <ScopePicker selected={["openid", "profile", "email"]} />
             <div className="modal-actions">
               <button
                 className="button-secondary"
@@ -1936,6 +1996,9 @@ export function AdminDashboard() {
                 <option value="native">Native app (public with PKCE)</option>
               </select>
             </label>
+            <ScopePicker
+              selected={(editingClient.scope ?? "").split(/\s+/).filter(Boolean)}
+            />
             <p className="modal-copy">
               Client ID <code>{editingClient.client_id}</code> stays the same. The
               secret is unchanged — rotate it separately if it leaked.

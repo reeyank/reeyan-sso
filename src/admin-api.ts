@@ -65,7 +65,7 @@ const ADMIN_REFERENCE = "sso-admin";
 
 adminApi.get("/clients", async (c) => {
   const result = await pool.query(
-    `select o."clientId", o.name, o.type, o."redirectUris", o."grantTypes",
+    `select o."clientId", o.name, o.type, o."redirectUris", o."grantTypes", o.scopes,
             o."tokenEndpointAuthMethod", o."referenceId", o."userId",
             o.disabled, o."createdAt", u.email as "ownerEmail"
        from "oauthClient" o
@@ -80,6 +80,9 @@ adminApi.get("/clients", async (c) => {
       type: row.type,
       redirect_uris: row.redirectUris ?? [],
       grant_types: row.grantTypes ?? [],
+      // Better Auth stores scopes as a jsonb array but its OAuth surface uses
+      // the space-separated form, which is what update-client expects back.
+      scope: Array.isArray(row.scopes) ? row.scopes.join(" ") : (row.scopes ?? ""),
       token_endpoint_auth_method: row.tokenEndpointAuthMethod,
       disabled: row.disabled ?? false,
       // Only these can be edited or have their secret rotated through the
