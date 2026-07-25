@@ -2,6 +2,7 @@ import { betterAuth } from "better-auth";
 import { jwt, admin } from "better-auth/plugins";
 import { createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
 import { oauthProvider } from "@better-auth/oauth-provider";
+import { passkey } from "@better-auth/passkey";
 import { pool } from "./db.js";
 import {
     recordAudit,
@@ -46,6 +47,11 @@ function safeDetail(body: unknown) {
   }
   return Object.keys(detail).length ? detail : undefined;
 }
+
+// WebAuthn binds credentials to a registrable domain: rpID is the bare host
+// (no scheme, no port) and origin must match the browser's origin exactly.
+// Both are derived from BASE_URL so dev and production stay consistent.
+const baseUrl = new URL(process.env.BASE_URL ?? "http://localhost:3000");
 
 export const auth = betterAuth({
     baseURL: process.env.BASE_URL, // https://reeyan.md
@@ -152,6 +158,17 @@ export const auth = betterAuth({
         //   docker compose exec db psql -U sso -d sso -c "update \"user\" set role='admin' where email='you@example.com';"
         // From then on /admin lets that account promote others.
         admin(),
+        passkey({
+            rpID: baseUrl.hostname,
+            rpName: "reeyan",
+            origin: baseUrl.origin,
+            authenticatorSelection: {
+                // Prefer a device-bound credential the browser can offer up
+                // without the user first typing an email.
+                residentKey: "preferred",
+                userVerification: "preferred",
+            },
+        }),
         oauthProvider({
             loginPage: "/sign-in",
             consentPage: "/consent",

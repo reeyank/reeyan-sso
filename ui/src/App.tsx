@@ -1,6 +1,13 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { AdminDashboard } from "./AdminDashboard";
 import { formatDate, initials } from "./format";
+import {
+  authClient,
+  conditionalUiAvailable,
+  passkeyErrorMessage,
+  passkeysSupported,
+  type Passkey,
+} from "./auth-client";
 
 const scopeLabels: Record<string, string> = {
   openid: "verify your identity",
@@ -44,7 +51,43 @@ function redirectTarget(fallback: string) {
 function SignInPage() {
   const redirectTo = redirectTarget("/");
   const [error, setError] = useState(false);
+  const [passkeyError, setPasskeyError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [passkeyReady] = useState(passkeysSupported);
+
+  useEffect(() => {
+    if (!passkeyReady) return;
+    let cancelled = false;
+    // Conditional mediation lets the browser offer a saved passkey straight
+    // from the email field, with no button press at all.
+    void (async () => {
+      if (!(await conditionalUiAvailable()) || cancelled) return;
+      try {
+        const result = await authClient.signIn.passkey({ autoFill: true });
+        if (!cancelled && !result?.error) window.location.href = redirectTo;
+      } catch {
+        // An abandoned autofill prompt is not an error worth showing.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [passkeyReady, redirectTo]);
+
+  async function signInWithPasskey() {
+    setError(false);
+    setPasskeyError(null);
+    setSubmitting(true);
+    try {
+      const result = await authClient.signIn.passkey();
+      if (result?.error) throw new Error(result.error.message);
+      window.location.href = redirectTo;
+      return;
+    } catch (cause) {
+      setPasskeyError(passkeyErrorMessage(cause, "passkey sign-in failed"));
+    }
+    setSubmitting(false);
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -91,7 +134,7 @@ function SignInPage() {
           type="email"
           name="email"
           required
-          autoComplete="username"
+          autoComplete={passkeyReady ? "username webauthn" : "username"}
         />
 
         <label htmlFor="password">password</label>
@@ -103,13 +146,29 @@ function SignInPage() {
           autoComplete="current-password"
         />
 
-        <p className={`error${error ? " visible" : ""}`}>
-          invalid credentials — try again
+        <p className={`error${error || passkeyError ? " visible" : ""}`}>
+          {passkeyError ?? "invalid credentials — try again"}
         </p>
 
         <button className="btn-primary" type="submit" disabled={submitting}>
           Continue
         </button>
+
+        {passkeyReady ? (
+          <>
+            <p className="divider">
+              <span>or</span>
+            </p>
+            <button
+              className="btn-deny"
+              type="button"
+              disabled={submitting}
+              onClick={() => void signInWithPasskey()}
+            >
+              Use a passkey
+            </button>
+          </>
+        ) : null}
 
         <p className="form-switch">
           No account?{" "}
@@ -251,12 +310,28 @@ function scopeList(scopes: Consent["scopes"]) {
   return Array.isArray(scopes) ? scopes : scopes.split(/[\s,]+/).filter(Boolean);
 }
 
+// A name the person will recognise later in the list.
+function defaultPasskeyName() {
+  const agent = navigator.userAgent;
+  const os =
+    /Mac OS X|Macintosh/.test(agent) ? "Mac"
+    : /Windows/.test(agent) ? "Windows"
+    : /iPhone|iPad/.test(agent) ? "iPhone"
+    : /Android/.test(agent) ? "Android"
+    : /Linux/.test(agent) ? "Linux"
+    : "This device";
+  return os;
+}
+
 function AccountPage() {
   const [user, setUser] = useState<AccountUser | null>(null);
   const [sessionCount, setSessionCount] = useState<number | null>(null);
   const [consents, setConsents] = useState<Consent[]>([]);
+  const [passkeys, setPasskeys] = useState<Passkey[]>([]);
+  const [passkeyReady] = useState(passkeysSupported);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     document.title = "reeyan — account";
@@ -269,11 +344,15 @@ function AccountPage() {
         }
         setUser(session.user);
 
-        const [sessions, granted] = await Promise.all([
+        const [sessions, granted, keys] = await Promise.all([
           fetch("/api/auth/list-sessions").then((r) => (r.ok ? r.json() : [])),
           fetch("/api/auth/oauth2/get-consents").then((r) => (r.ok ? r.json() : [])),
+          fetch("/api/auth/passkey/list-user-passkeys").then((r) =>
+            r.ok ? r.json() : [],
+          ),
         ]);
         setSessionCount(Array.isArray(sessions) ? sessions.length : null);
+        setPasskeys(Array.isArray(keys) ? keys : []);
 
         const list: Consent[] = Array.isArray(granted) ? granted : [];
         // Consent rows only carry the client id, so each name is looked up
@@ -309,6 +388,55 @@ function AccountPage() {
       window.location.href = "/sign-in";
     } catch {
       setError("could not sign out — try again");
+      setBusy(null);
+    }
+  }
+
+  async function addPasskey() {
+    setBusy("add-passkey");
+    setError(null);
+    setNotice(null);
+    try {
+      const label =
+        window.prompt("Name this passkey", defaultPasskeyName()) ?? undefined;
+      const result = await authClient.passkey.addPasskey({ name: label });
+      if (result?.error) throw new Error(result.error.message);
+      const keys = await fetch("/api/auth/passkey/list-user-passkeys").then((r) =>
+        r.ok ? r.json() : [],
+      );
+      setPasskeys(Array.isArray(keys) ? keys : []);
+      setNotice("passkey added");
+    } catch (cause) {
+      setError(passkeyErrorMessage(cause, "could not add that passkey"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function removePasskey(key: Passkey) {
+    // The last passkey is still removable, but say what it costs.
+    if (
+      !window.confirm(
+        `Remove ${key.name || "this passkey"}? You will not be able to sign in with it again.`,
+      )
+    ) {
+      return;
+    }
+    setBusy(key.id);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await fetch("/api/auth/passkey/delete-passkey", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: key.id }),
+      });
+      if (!response.ok) throw new Error();
+      setPasskeys((current) => current.filter((item) => item.id !== key.id));
+      setNotice("passkey removed");
+    } catch {
+      setError("could not remove that passkey — try again");
+    } finally {
       setBusy(null);
     }
   }
@@ -375,6 +503,49 @@ function AccountPage() {
         </div>
       </dl>
 
+      {passkeyReady ? (
+        <section className="account-apps">
+          <h2>Passkeys</h2>
+          {passkeys.length ? (
+            <ul>
+              {passkeys.map((key) => (
+                <li key={key.id}>
+                  <div>
+                    <strong>{key.name || "Unnamed passkey"}</strong>
+                    <span>
+                      {key.deviceType === "multiDevice" ? "Synced" : "This device"}
+                      {key.backedUp ? " · backed up" : ""} · added{" "}
+                      {formatDate(key.createdAt)}
+                    </span>
+                  </div>
+                  <button
+                    className="link-button"
+                    type="button"
+                    disabled={busy === key.id}
+                    onClick={() => void removePasskey(key)}
+                  >
+                    Remove
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="account-hint">
+              No passkeys yet. Add one to sign in with Touch ID, Face ID, Windows
+              Hello, or a security key instead of your password.
+            </p>
+          )}
+          <button
+            className="link-button add"
+            type="button"
+            disabled={busy === "add-passkey"}
+            onClick={() => void addPasskey()}
+          >
+            {busy === "add-passkey" ? "Waiting for device…" : "+ Add a passkey"}
+          </button>
+        </section>
+      ) : null}
+
       {consents.length ? (
         <section className="account-apps">
           <h2>Connected applications</h2>
@@ -404,6 +575,7 @@ function AccountPage() {
       ) : null}
 
       {error ? <p className="error visible">{error}</p> : null}
+      {notice ? <p className="account-notice">{notice}</p> : null}
 
       <div className="account-actions">
         {user.role === "admin" ? (

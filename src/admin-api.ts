@@ -31,7 +31,8 @@ adminApi.get("/stats", async (c) => {
       (select count(*)::int from "user" where banned) as suspended,
       (select count(*)::int from "oauthClient") as clients,
       (select count(*)::int from "oauthConsent") as consents,
-      (select count(*)::int from session where "expiresAt" > now()) as "activeSessions"
+      (select count(*)::int from session where "expiresAt" > now()) as "activeSessions",
+      (select count(*)::int from passkey) as passkeys
   `);
   return c.json(result.rows[0]);
 });
@@ -147,6 +148,46 @@ adminApi.post("/clients/delete", async (c) => {
     targetType: "client",
     targetId: clientId,
     targetLabel: existing.rows[0].name,
+    ip: c.req.header("x-forwarded-for") ?? c.req.header("x-real-ip") ?? null,
+  });
+
+  return c.json({ success: true });
+});
+
+// The passkey plugin's list endpoint only ever returns the caller's own keys,
+// so admin visibility into someone else's reads the table directly.
+adminApi.get("/passkeys", async (c) => {
+  const userId = c.req.query("userId");
+  if (!userId) return c.json({ message: "userId is required." }, 400);
+
+  const result = await pool.query(
+    `select id, name, "deviceType", "backedUp", "createdAt"
+       from passkey where "userId" = $1 order by "createdAt" desc`,
+    [userId],
+  );
+  return c.json({ passkeys: result.rows });
+});
+
+adminApi.post("/passkeys/revoke", async (c) => {
+  const { passkeyId } = await c.req.json<{ passkeyId?: string }>();
+  if (!passkeyId) return c.json({ message: "passkeyId is required." }, 400);
+
+  const result = await pool.query(
+    `delete from passkey where id = $1 returning "userId", name`,
+    [passkeyId],
+  );
+  if (!result.rowCount) return c.json({ message: "Passkey not found." }, 404);
+  const { userId, name } = result.rows[0];
+
+  const session = c.get("session");
+  await recordAudit({
+    actorId: session.user.id,
+    actorEmail: session.user.email,
+    action: "passkey.revoke",
+    targetType: "user",
+    targetId: userId,
+    targetLabel: await lookupUserLabel(userId),
+    detail: { passkey: name ?? passkeyId },
     ip: c.req.header("x-forwarded-for") ?? c.req.header("x-real-ip") ?? null,
   });
 

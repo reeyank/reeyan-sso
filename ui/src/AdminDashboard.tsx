@@ -43,6 +43,14 @@ type UserSession = {
   userAgent?: string | null;
 };
 
+type AdminPasskey = {
+  id: string;
+  name?: string | null;
+  deviceType: string;
+  backedUp: boolean;
+  createdAt: string;
+};
+
 type Consent = {
   id: string;
   clientId: string;
@@ -70,6 +78,7 @@ type Stats = {
   clients: number;
   consents: number;
   activeSessions: number;
+  passkeys: number;
 };
 
 type SessionResponse = {
@@ -348,6 +357,9 @@ export function AdminDashboard() {
   const [managed, setManaged] = useState<AdminUser | null>(null);
   const [managedSessions, setManagedSessions] = useState<UserSession[] | null>(null);
   const [managedConsents, setManagedConsents] = useState<Consent[] | null>(null);
+  const [managedPasskeys, setManagedPasskeys] = useState<AdminPasskey[] | null>(
+    null,
+  );
   const [suspending, setSuspending] = useState<AdminUser | null>(null);
   const [resetting, setResetting] = useState<AdminUser | null>(null);
   const [deleting, setDeleting] = useState<AdminUser | null>(null);
@@ -604,21 +616,25 @@ export function AdminDashboard() {
     setManaged(user);
     setManagedSessions(null);
     setManagedConsents(null);
+    setManagedPasskeys(null);
     void (async () => {
       try {
-        const [sessions, consents] = await Promise.all([
+        const [sessions, consents, passkeys] = await Promise.all([
           apiRequest<{ sessions: UserSession[] }>("/admin/list-user-sessions", {
             method: "POST",
             body: JSON.stringify({ userId: user.id }),
           }),
           adminRequest<{ consents: Consent[] }>(`/consents?userId=${user.id}`),
+          adminRequest<{ passkeys: AdminPasskey[] }>(`/passkeys?userId=${user.id}`),
         ]);
         setManagedSessions(sessions.sessions ?? []);
         setManagedConsents(consents.consents ?? []);
+        setManagedPasskeys(passkeys.passkeys ?? []);
       } catch (error) {
         showError(error);
         setManagedSessions([]);
         setManagedConsents([]);
+        setManagedPasskeys([]);
       }
     })();
   };
@@ -651,6 +667,22 @@ export function AdminDashboard() {
         await loadStats();
       },
       `Signed ${user.name} out everywhere.`,
+    );
+
+  const revokePasskey = (key: AdminPasskey) =>
+    run(
+      key.id,
+      async () => {
+        await adminRequest("/passkeys/revoke", {
+          method: "POST",
+          body: JSON.stringify({ passkeyId: key.id }),
+        });
+        setManagedPasskeys(
+          (current) => current?.filter((item) => item.id !== key.id) ?? null,
+        );
+        await loadStats();
+      },
+      "Passkey removed.",
     );
 
   const revokeConsent = (consent: Consent) =>
@@ -938,6 +970,10 @@ export function AdminDashboard() {
           <div>
             <span>Active sessions</span>
             <strong>{stats?.activeSessions ?? "—"}</strong>
+          </div>
+          <div>
+            <span>Passkeys</span>
+            <strong>{stats?.passkeys ?? "—"}</strong>
           </div>
           <div>
             <span>OAuth clients</span>
@@ -1317,6 +1353,42 @@ export function AdminDashboard() {
                         onClick={() => void revokeSession(item.token)}
                       >
                         Revoke
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
+            <section className="manage-block">
+              <header>
+                <h3>Passkeys</h3>
+              </header>
+              {managedPasskeys === null ? (
+                <p className="manage-empty">Loading…</p>
+              ) : managedPasskeys.length === 0 ? (
+                <p className="manage-empty">No passkeys registered.</p>
+              ) : (
+                <ul className="manage-list">
+                  {managedPasskeys.map((key) => (
+                    <li key={key.id}>
+                      <div>
+                        <strong>{key.name || "Unnamed passkey"}</strong>
+                        <span>
+                          {key.deviceType === "multiDevice"
+                            ? "Synced"
+                            : "Single device"}
+                          {key.backedUp ? " · backed up" : ""} · added{" "}
+                          {formatDate(key.createdAt)}
+                        </span>
+                      </div>
+                      <button
+                        className="text-button danger"
+                        type="button"
+                        disabled={busyId === key.id}
+                        onClick={() => void revokePasskey(key)}
+                      >
+                        Remove
                       </button>
                     </li>
                   ))}
