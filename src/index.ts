@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 import { auth } from "./auth.js";
 import { adminApi } from "./admin-api.js";
-import { ensureAuditTable } from "./audit.js";
+import { ensureAuditTable, warnOnMissingTables } from "./audit.js";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { readFileSync } from "node:fs";
 
@@ -38,5 +38,6 @@ app.get("/health", (c) => c.text("ok"));
 
 const port = Number(process.env.PORT ?? 3000);
 await ensureAuditTable();
+await warnOnMissingTables();
 serve({ fetch: app.fetch, port });
 console.log(`reeyan-sso listening on :${port}`);

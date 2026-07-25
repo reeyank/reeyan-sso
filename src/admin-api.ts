@@ -11,6 +11,13 @@ type AdminSession = NonNullable<Awaited<ReturnType<typeof auth.api.getSession>>>
 
 export const adminApi = new Hono<{ Variables: { session: AdminSession } }>();
 
+async function tableExists(name: string) {
+  const result = await pool.query(`select to_regclass($1) is not null as ok`, [
+    `public."${name}"`,
+  ]);
+  return result.rows[0].ok as boolean;
+}
+
 adminApi.use("*", async (c, next) => {
   const session = await auth.api.getSession({ headers: c.req.raw.headers });
   if (!session) return c.json({ message: "Sign in required." }, 401);
@@ -24,6 +31,11 @@ adminApi.use("*", async (c, next) => {
 // Once the directory is paginated the client only ever holds one page, so the
 // summary counts have to come from the database rather than the loaded rows.
 adminApi.get("/stats", async (c) => {
+  // Postgres resolves every table at parse time, so a missing passkey table
+  // (plugin added, migration not yet run) would fail the whole query and take
+  // the console down with it. Ask first, count second.
+  const hasPasskeys = await tableExists("passkey");
+
   const result = await pool.query(`
     select
       (select count(*)::int from "user") as "totalUsers",
@@ -31,10 +43,10 @@ adminApi.get("/stats", async (c) => {
       (select count(*)::int from "user" where banned) as suspended,
       (select count(*)::int from "oauthClient") as clients,
       (select count(*)::int from "oauthConsent") as consents,
-      (select count(*)::int from session where "expiresAt" > now()) as "activeSessions",
-      (select count(*)::int from passkey) as passkeys
+      (select count(*)::int from session where "expiresAt" > now()) as "activeSessions"
+      ${hasPasskeys ? `, (select count(*)::int from passkey) as passkeys` : ""}
   `);
-  return c.json(result.rows[0]);
+  return c.json({ passkeys: null, ...result.rows[0] });
 });
 
 adminApi.get("/audit", async (c) => {
@@ -159,6 +171,7 @@ adminApi.post("/clients/delete", async (c) => {
 adminApi.get("/passkeys", async (c) => {
   const userId = c.req.query("userId");
   if (!userId) return c.json({ message: "userId is required." }, 400);
+  if (!(await tableExists("passkey"))) return c.json({ passkeys: [] });
 
   const result = await pool.query(
     `select id, name, "deviceType", "backedUp", "createdAt"
@@ -192,6 +205,45 @@ adminApi.post("/passkeys/revoke", async (c) => {
   });
 
   return c.json({ success: true });
+});
+
+// Every grant across the whole directory, for the Consents view. The per-user
+// lookup below stays as it is — the drawer still uses it.
+adminApi.get("/consents/all", async (c) => {
+  const limit = Math.min(Number(c.req.query("limit") ?? 25) || 25, 200);
+  const offset = Math.max(Number(c.req.query("offset") ?? 0) || 0, 0);
+  const search = (c.req.query("search") ?? "").trim();
+
+  const filter = `
+    where ($1 = ''
+       or u.email ilike '%' || $1 || '%'
+       or u.name ilike '%' || $1 || '%'
+       or o.name ilike '%' || $1 || '%')`;
+
+  const [rows, total] = await Promise.all([
+    pool.query(
+      `select c.id, c."clientId", c.scopes, c."createdAt", c."userId",
+              u.email as "userEmail", u.name as "userName",
+              o.name as "clientName", o."referenceId"
+         from "oauthConsent" c
+         left join "user" u on u.id = c."userId"
+         left join "oauthClient" o on o."clientId" = c."clientId"
+         ${filter}
+        order by c."createdAt" desc
+        limit $2 offset $3`,
+      [search, limit, offset],
+    ),
+    pool.query(
+      `select count(*)::int as count
+         from "oauthConsent" c
+         left join "user" u on u.id = c."userId"
+         left join "oauthClient" o on o."clientId" = c."clientId"
+         ${filter}`,
+      [search],
+    ),
+  ]);
+
+  return c.json({ consents: rows.rows, total: total.rows[0].count as number });
 });
 
 adminApi.get("/consents", async (c) => {

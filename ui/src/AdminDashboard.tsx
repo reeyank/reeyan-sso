@@ -59,6 +59,13 @@ type Consent = {
   createdAt: string;
 };
 
+// The directory-wide view carries who granted it as well.
+type ConsentRow = Consent & {
+  userId: string;
+  userEmail?: string | null;
+  userName?: string | null;
+};
+
 type AuditEntry = {
   id: number;
   createdAt: string;
@@ -92,11 +99,12 @@ type Discovery = Record<string, unknown>;
 
 type Notice = { tone: "success" | "error"; message: string };
 
-type View = "users" | "applications" | "audit" | "endpoints";
+type View = "users" | "applications" | "consents" | "audit" | "endpoints";
 
 const API = "/api/auth";
 const ADMIN_API = "/api/admin";
 const PAGE_SIZE = 25;
+const CONSENT_PAGE_SIZE = 25;
 const AUDIT_PAGE_SIZE = 50;
 
 async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
@@ -339,6 +347,12 @@ export function AdminDashboard() {
   const [clients, setClients] = useState<OAuthClient[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
 
+  const [allConsents, setAllConsents] = useState<ConsentRow[]>([]);
+  const [consentTotal, setConsentTotal] = useState(0);
+  const [consentPage, setConsentPage] = useState(0);
+  const [consentSearch, setConsentSearch] = useState("");
+  const [debouncedConsentSearch, setDebouncedConsentSearch] = useState("");
+
   const [audit, setAudit] = useState<AuditEntry[]>([]);
   const [auditTotal, setAuditTotal] = useState(0);
   const [auditPage, setAuditPage] = useState(0);
@@ -379,6 +393,14 @@ export function AdminDashboard() {
     return () => window.clearTimeout(timer);
   }, [search]);
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedConsentSearch(consentSearch.trim());
+      setConsentPage(0);
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [consentSearch]);
+
   function showError(error: unknown) {
     setNotice({
       tone: "error",
@@ -417,6 +439,19 @@ export function AdminDashboard() {
     setStats(await adminRequest<Stats>("/stats"));
   }, []);
 
+  const loadAllConsents = useCallback(async () => {
+    const params = new URLSearchParams({
+      limit: String(CONSENT_PAGE_SIZE),
+      offset: String(consentPage * CONSENT_PAGE_SIZE),
+    });
+    if (debouncedConsentSearch) params.set("search", debouncedConsentSearch);
+    const data = await adminRequest<{ consents: ConsentRow[]; total: number }>(
+      `/consents/all?${params}`,
+    );
+    setAllConsents(data.consents);
+    setConsentTotal(data.total);
+  }, [consentPage, debouncedConsentSearch]);
+
   const loadAudit = useCallback(async () => {
     const data = await adminRequest<{ entries: AuditEntry[]; total: number }>(
       `/audit?limit=${AUDIT_PAGE_SIZE}&offset=${auditPage * AUDIT_PAGE_SIZE}`,
@@ -433,9 +468,18 @@ export function AdminDashboard() {
         if (!current.user) return setAccess("signed-out");
         if (current.user.role !== "admin") return setAccess("forbidden");
         setAccess("admin");
-        await Promise.all([loadUsers(), loadClients(), loadStats()]);
       } catch {
         setAccess("signed-out");
+        return;
+      }
+
+      // Loading data is a separate concern from being allowed in. Folding it
+      // into the check above meant one failing request (a missing table, a
+      // 500) logged a valid admin out with "Sign in required".
+      try {
+        await Promise.all([loadUsers(), loadClients(), loadStats()]);
+      } catch (error) {
+        showError(error);
       }
     })();
     // Deliberately runs once: later refreshes are driven by the effects below.
@@ -446,6 +490,11 @@ export function AdminDashboard() {
     if (access !== "admin") return;
     void loadUsers().catch(showError);
   }, [access, loadUsers]);
+
+  useEffect(() => {
+    if (access !== "admin" || activeView !== "consents") return;
+    void loadAllConsents().catch(showError);
+  }, [access, activeView, loadAllConsents]);
 
   useEffect(() => {
     if (access !== "admin" || activeView !== "audit") return;
@@ -685,6 +734,19 @@ export function AdminDashboard() {
       "Passkey removed.",
     );
 
+  const revokeConsentRow = (consent: ConsentRow) =>
+    run(
+      consent.id,
+      async () => {
+        await adminRequest("/consents/revoke", {
+          method: "POST",
+          body: JSON.stringify({ consentId: consent.id }),
+        });
+        await Promise.all([loadAllConsents(), loadStats()]);
+      },
+      `Access revoked for ${consent.userEmail ?? "that user"}.`,
+    );
+
   const revokeConsent = (consent: Consent) =>
     run(
       consent.id,
@@ -850,6 +912,7 @@ export function AdminDashboard() {
   const headings: Record<View, string> = {
     users: "Directory",
     applications: "Applications",
+    consents: "Consents",
     audit: "Audit log",
     endpoints: "Endpoints",
   };
@@ -898,6 +961,7 @@ export function AdminDashboard() {
             [
               ["users", "Users", stats?.totalUsers],
               ["applications", "Applications", stats?.clients],
+              ["consents", "Consents", stats?.consents],
               ["audit", "Audit log", undefined],
               ["endpoints", "Endpoints", undefined],
             ] as [View, string, number | undefined][]
@@ -1198,6 +1262,95 @@ export function AdminDashboard() {
                 </div>
               ) : null}
             </div>
+          </section>
+        ) : null}
+
+        {activeView === "consents" ? (
+          <section className="data-section">
+            <div className="section-toolbar">
+              <div>
+                <h2>Granted access</h2>
+                <p>{consentTotal} authorizations across the directory</p>
+              </div>
+              <label className="search-field">
+                <span>Search consents</span>
+                <input
+                  type="search"
+                  placeholder="User or application"
+                  value={consentSearch}
+                  onChange={(event) => setConsentSearch(event.target.value)}
+                />
+              </label>
+            </div>
+
+            <div className="user-list consent-list">
+              <div className="consent-row consent-row-header" aria-hidden="true">
+                <span>User</span>
+                <span>Application</span>
+                <span>Scopes</span>
+                <span>Granted</span>
+                <span>Actions</span>
+              </div>
+              {allConsents.map((consent) => (
+                <article className="consent-row" key={consent.id}>
+                  <div className="user-identity">
+                    <div className="avatar">
+                      {initials(consent.userName ?? "", consent.userEmail ?? "?")}
+                    </div>
+                    <div>
+                      <strong>{consent.userName ?? "Unknown user"}</strong>
+                      <span>{consent.userEmail ?? consent.userId}</span>
+                    </div>
+                  </div>
+                  <div className="consent-client">
+                    <strong>{consent.clientName ?? "Deleted application"}</strong>
+                    <code>{consent.clientId}</code>
+                  </div>
+                  <div className="scope-tags">
+                    {scopeList(consent.scopes).map((scope) => (
+                      <span key={scope}>{scope}</span>
+                    ))}
+                    {scopeList(consent.scopes).length === 0 ? (
+                      <span className="muted-value">none</span>
+                    ) : null}
+                  </div>
+                  <span className="muted-value">
+                    {formatDate(consent.createdAt)}
+                  </span>
+                  <div className="row-actions">
+                    <button
+                      className="text-button danger"
+                      type="button"
+                      disabled={busyId === consent.id}
+                      onClick={() => void revokeConsentRow(consent)}
+                    >
+                      Revoke
+                    </button>
+                  </div>
+                </article>
+              ))}
+              {allConsents.length === 0 ? (
+                <div className="empty-state large">
+                  <strong>
+                    {debouncedConsentSearch
+                      ? "No matching authorizations"
+                      : "No applications authorized yet"}
+                  </strong>
+                  <span>
+                    {debouncedConsentSearch
+                      ? "Try a different user or application name."
+                      : "Grants appear here once someone signs in to a connected app."}
+                  </span>
+                </div>
+              ) : null}
+            </div>
+
+            <Pager
+              page={consentPage}
+              pageSize={CONSENT_PAGE_SIZE}
+              total={consentTotal}
+              onChange={setConsentPage}
+            />
           </section>
         ) : null}
 
