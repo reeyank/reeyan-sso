@@ -100,23 +100,25 @@ type Discovery = Record<string, unknown>;
 
 type Notice = { tone: "success" | "error"; message: string };
 
-type View = "users" | "applications" | "consents" | "audit" | "endpoints";
+type View = "users" | "applications" | "scopes" | "consents" | "audit" | "endpoints";
 
 const API = "/api/auth";
 const ADMIN_API = "/api/admin";
 const PAGE_SIZE = 25;
 const CONSENT_PAGE_SIZE = 25;
 
-// What this provider advertises in its discovery document. openid is not
-// optional — it is what makes the client an OIDC client at all.
-const SUPPORTED_SCOPES = [
-  { value: "openid", hint: "Required. Issues an ID token.", required: true },
-  { value: "profile", hint: "Name and profile fields." },
-  { value: "email", hint: "Email address and verification state." },
-  {
-    value: "offline_access",
-    hint: "Issues a refresh token so the app can stay signed in.",
-  },
+type ScopeDef = { value: string; description: string; required?: boolean };
+
+type ScopeRow = ScopeDef & {
+  createdAt: string;
+  clientCount: number;
+  grantCount: number;
+};
+
+// Served from src/scopes.ts, so a custom scope added there shows up here
+// without touching the UI. Used until /api/scopes responds.
+const FALLBACK_SCOPES: ScopeDef[] = [
+  { value: "openid", description: "verify your identity", required: true },
 ];
 const AUDIT_PAGE_SIZE = 50;
 
@@ -283,11 +285,22 @@ function Pager({
   );
 }
 
-function ScopePicker({ selected }: { selected: string[] }) {
+function ScopePicker({
+  available,
+  selected,
+}: {
+  available: ScopeDef[];
+  selected: string[];
+}) {
+  // A scope the client already holds that the server no longer declares still
+  // has to be visible, or saving would silently drop it.
+  const known = new Set(available.map((scope) => scope.value));
+  const orphaned = selected.filter((scope) => !known.has(scope));
+
   return (
     <fieldset className="scope-picker">
       <legend>Scopes</legend>
-      {SUPPORTED_SCOPES.map((scope) => (
+      {available.map((scope) => (
         <label key={scope.value}>
           <input
             type="checkbox"
@@ -298,7 +311,16 @@ function ScopePicker({ selected }: { selected: string[] }) {
           />
           <span>
             <code>{scope.value}</code>
-            <small>{scope.hint}</small>
+            <small>{scope.description}</small>
+          </span>
+        </label>
+      ))}
+      {orphaned.map((scope) => (
+        <label key={scope} className="orphaned">
+          <input type="checkbox" name="scopes" value={scope} defaultChecked />
+          <span>
+            <code>{scope}</code>
+            <small>Not declared in src/scopes.ts — /authorize will reject it.</small>
           </span>
         </label>
       ))}
@@ -396,6 +418,10 @@ export function AdminDashboard() {
   const [auditPage, setAuditPage] = useState(0);
 
   const [discovery, setDiscovery] = useState<Discovery | null>(null);
+  const [scopeDefs, setScopeDefs] = useState<ScopeDef[]>(FALLBACK_SCOPES);
+  const [scopeRows, setScopeRows] = useState<ScopeRow[]>([]);
+  const [showNewScope, setShowNewScope] = useState(false);
+  const [editingScope, setEditingScope] = useState<ScopeRow | null>(null);
 
   const [activeView, setActiveView] = useState<View>("users");
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -473,6 +499,17 @@ export function AdminDashboard() {
     setClients(data.clients ?? []);
   }, []);
 
+  const loadScopes = useCallback(async () => {
+    const data = await request<{ scopes: ScopeDef[] }>("/api/scopes");
+    if (data.scopes?.length) setScopeDefs(data.scopes);
+  }, []);
+
+  const loadScopeRows = useCallback(async () => {
+    const data = await adminRequest<{ scopes: ScopeRow[] }>("/scopes");
+    setScopeRows(data.scopes ?? []);
+    if (data.scopes?.length) setScopeDefs(data.scopes);
+  }, []);
+
   const loadStats = useCallback(async () => {
     setStats(await adminRequest<Stats>("/stats"));
   }, []);
@@ -515,7 +552,12 @@ export function AdminDashboard() {
       // into the check above meant one failing request (a missing table, a
       // 500) logged a valid admin out with "Sign in required".
       try {
-        await Promise.all([loadUsers(), loadClients(), loadStats()]);
+        await Promise.all([
+          loadUsers(),
+          loadClients(),
+          loadStats(),
+          loadScopes(),
+        ]);
       } catch (error) {
         showError(error);
       }
@@ -528,6 +570,11 @@ export function AdminDashboard() {
     if (access !== "admin") return;
     void loadUsers().catch(showError);
   }, [access, loadUsers]);
+
+  useEffect(() => {
+    if (access !== "admin" || activeView !== "scopes") return;
+    void loadScopeRows().catch(showError);
+  }, [access, activeView, loadScopeRows]);
 
   useEffect(() => {
     if (access !== "admin" || activeView !== "consents") return;
@@ -827,9 +874,11 @@ export function AdminDashboard() {
     // Checkbox order plus the hidden openid field would otherwise decide how
     // the scope string reads; sort it into the documented order instead.
     const picked = new Set(data.getAll("scopes").map(String));
-    const scopes = SUPPORTED_SCOPES.map((scope) => scope.value).filter((value) =>
-      picked.has(value),
-    );
+    const declared = scopeDefs.map((scope) => scope.value);
+    const scopes = [
+      ...declared.filter((value) => picked.has(value)),
+      ...[...picked].filter((value) => !declared.includes(value)),
+    ];
     return {
       client_name: String(data.get("name")),
       redirect_uris: String(data.get("redirectUris"))
@@ -957,6 +1006,75 @@ export function AdminDashboard() {
     );
   }
 
+  async function createScope(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    await run(
+      "new-scope",
+      async () => {
+        await adminRequest("/scopes", {
+          method: "POST",
+          body: JSON.stringify({
+            value: String(data.get("value")).trim(),
+            description: String(data.get("description")),
+          }),
+        });
+        await Promise.all([loadScopeRows(), loadScopes()]);
+        setShowNewScope(false);
+      },
+      "Scope added.",
+    );
+  }
+
+  async function updateScope(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editingScope) return;
+    const data = new FormData(event.currentTarget);
+    await run(
+      "edit-scope",
+      async () => {
+        await adminRequest("/scopes/update", {
+          method: "POST",
+          body: JSON.stringify({
+            value: editingScope.value,
+            description: String(data.get("description")),
+          }),
+        });
+        await Promise.all([loadScopeRows(), loadScopes()]);
+        setEditingScope(null);
+      },
+      "Scope updated.",
+    );
+  }
+
+  async function deleteScope(scope: ScopeRow, force = false) {
+    setBusyId(scope.value);
+    setNotice(null);
+    try {
+      await adminRequest("/scopes/delete", {
+        method: "POST",
+        body: JSON.stringify({ value: scope.value, force }),
+      });
+      await Promise.all([loadScopeRows(), loadScopes(), loadClients()]);
+      setNotice({ tone: "success", message: `${scope.value} removed.` });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Something went wrong.";
+      // The server refuses first and explains what is still using it; the
+      // second pass strips it from those clients and grants.
+      if (!force && message.includes("still allowed by")) {
+        if (window.confirm(`${message}\n\nRemove it everywhere?`)) {
+          setBusyId(null);
+          return deleteScope(scope, true);
+        }
+      } else {
+        showError(error);
+      }
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function copyValue(value: string) {
     await navigator.clipboard.writeText(value);
     setNotice({ tone: "success", message: "Copied to clipboard." });
@@ -965,6 +1083,7 @@ export function AdminDashboard() {
   const headings: Record<View, string> = {
     users: "Directory",
     applications: "Applications",
+    scopes: "Scopes",
     consents: "Consents",
     audit: "Audit log",
     endpoints: "Endpoints",
@@ -1014,6 +1133,7 @@ export function AdminDashboard() {
             [
               ["users", "Users", stats?.totalUsers],
               ["applications", "Applications", stats?.clients],
+              ["scopes", "Scopes", undefined],
               ["consents", "Consents", undefined],
               ["audit", "Audit log", undefined],
               ["endpoints", "Endpoints", undefined],
@@ -1056,17 +1176,23 @@ export function AdminDashboard() {
             <p className="section-kicker">Identity provider</p>
             <h1>{headings[activeView]}</h1>
           </div>
-          {activeView === "users" || activeView === "applications" ? (
+          {activeView === "users" ||
+          activeView === "applications" ||
+          activeView === "scopes" ? (
             <button
               className="button-primary"
               type="button"
-              onClick={() =>
-                activeView === "users"
-                  ? setShowNewUser(true)
-                  : setShowNewClient(true)
-              }
+              onClick={() => {
+                if (activeView === "users") return setShowNewUser(true);
+                if (activeView === "scopes") return setShowNewScope(true);
+                setShowNewClient(true);
+              }}
             >
-              {activeView === "users" ? "Add user" : "Register app"}
+              {activeView === "users"
+                ? "Add user"
+                : activeView === "scopes"
+                  ? "Add scope"
+                  : "Register app"}
             </button>
           ) : null}
         </header>
@@ -1318,6 +1444,74 @@ export function AdminDashboard() {
                   >
                     Register app
                   </button>
+                </div>
+              ) : null}
+            </div>
+          </section>
+        ) : null}
+
+        {activeView === "scopes" ? (
+          <section className="data-section">
+            <div className="section-toolbar">
+              <div>
+                <h2>Declared scopes</h2>
+                <p>
+                  Requests for anything not listed here are rejected with
+                  invalid_scope. Changes apply immediately.
+                </p>
+              </div>
+            </div>
+
+            <div className="user-list scope-list">
+              <div className="scope-row scope-row-header" aria-hidden="true">
+                <span>Scope</span>
+                <span>Shown to users as</span>
+                <span>Apps</span>
+                <span>Grants</span>
+                <span>Actions</span>
+              </div>
+              {scopeRows.map((scope) => (
+                <article className="scope-row" key={scope.value}>
+                  <div className="scope-name">
+                    <code>{scope.value}</code>
+                    {scope.required ? (
+                      <span className="role-badge admin">required</span>
+                    ) : null}
+                  </div>
+                  <span className="muted-value">
+                    {scope.description || "—"}
+                  </span>
+                  <span className="muted-value">{scope.clientCount}</span>
+                  <span className="muted-value">{scope.grantCount}</span>
+                  <div className="row-actions">
+                    <button
+                      className="button-secondary compact"
+                      type="button"
+                      disabled={busyId === scope.value}
+                      onClick={() => setEditingScope(scope)}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      className="text-button danger"
+                      type="button"
+                      disabled={busyId === scope.value || scope.required}
+                      title={
+                        scope.required
+                          ? "Required by OpenID Connect"
+                          : "Remove this scope"
+                      }
+                      onClick={() => void deleteScope(scope)}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </article>
+              ))}
+              {scopeRows.length === 0 ? (
+                <div className="empty-state large">
+                  <strong>No scopes declared</strong>
+                  <span>Add one to let applications request it.</span>
                 </div>
               ) : null}
             </div>
@@ -1857,6 +2051,97 @@ export function AdminDashboard() {
         </Modal>
       ) : null}
 
+      {showNewScope ? (
+        <Modal
+          eyebrow="Scopes"
+          title="Add scope"
+          onClose={() => setShowNewScope(false)}
+        >
+          <form className="modal-form" onSubmit={createScope}>
+            <label>
+              Scope name
+              <input
+                name="value"
+                required
+                autoComplete="off"
+                placeholder="read:invoices"
+              />
+              <small>
+                Case sensitive, no spaces. Conventionally lowercase —
+                <code> resource:action</code> or a URI.
+              </small>
+            </label>
+            <label>
+              Description
+              <input
+                name="description"
+                required
+                autoComplete="off"
+                placeholder="read your invoices"
+              />
+              <small>Shown on the consent screen, as "this app can …"</small>
+            </label>
+            <div className="modal-actions">
+              <button
+                className="button-secondary"
+                type="button"
+                onClick={() => setShowNewScope(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="button-primary"
+                type="submit"
+                disabled={busyId === "new-scope"}
+              >
+                Add scope
+              </button>
+            </div>
+          </form>
+        </Modal>
+      ) : null}
+
+      {editingScope ? (
+        <Modal
+          eyebrow="Scopes"
+          title="Edit scope"
+          onClose={() => setEditingScope(null)}
+        >
+          <form className="modal-form" onSubmit={updateScope}>
+            <p className="modal-copy">
+              <code>{editingScope.value}</code> cannot be renamed — every
+              application and grant that holds it refers to it by name.
+            </p>
+            <label>
+              Description
+              <input
+                name="description"
+                required
+                autoComplete="off"
+                defaultValue={editingScope.description}
+              />
+              <small>Shown on the consent screen</small>
+            </label>
+            <div className="modal-actions">
+              <button
+                className="button-secondary"
+                type="button"
+                onClick={() => setEditingScope(null)}
+              >
+                Cancel
+              </button>
+              <button
+                className="button-primary"
+                type="submit"
+                disabled={busyId === "edit-scope"}
+              >
+                Save changes
+              </button>
+            </div>
+          </form>
+        </Modal>
+      ) : null}
+
       {showNewUser ? (
         <Modal
           eyebrow="Directory"
@@ -1938,7 +2223,12 @@ export function AdminDashboard() {
                 <option value="native">Native app (public with PKCE)</option>
               </select>
             </label>
-            <ScopePicker selected={["openid", "profile", "email"]} />
+            {/* A new client starts with the standard OIDC set. Custom scopes
+                are opt-in — nothing should hand out write access by default. */}
+            <ScopePicker
+              available={scopeDefs}
+              selected={["openid", "profile", "email"]}
+            />
             <div className="modal-actions">
               <button
                 className="button-secondary"
@@ -1997,6 +2287,7 @@ export function AdminDashboard() {
               </select>
             </label>
             <ScopePicker
+              available={scopeDefs}
               selected={(editingClient.scope ?? "").split(/\s+/).filter(Boolean)}
             />
             <p className="modal-copy">

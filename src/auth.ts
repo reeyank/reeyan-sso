@@ -3,6 +3,7 @@ import { jwt, admin } from "better-auth/plugins";
 import { createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
 import { oauthProvider } from "@better-auth/oauth-provider";
 import { passkey } from "@better-auth/passkey";
+import { bindPluginScopes, LIVE_SCOPE_VALUES } from "./scopes.js";
 import { pool } from "./db.js";
 import {
     recordAudit,
@@ -52,6 +53,26 @@ function safeDetail(body: unknown) {
 // (no scheme, no port) and origin must match the browser's origin exactly.
 // Both are derived from BASE_URL so dev and production stay consistent.
 const baseUrl = new URL(process.env.BASE_URL ?? "http://localhost:3000");
+
+// Captured so its normalised options (which hold the plugin's own copy of the
+// scope list) can be bound to the registry below.
+const oauthProviderPlugin = oauthProvider({
+    loginPage: "/sign-in",
+    consentPage: "/consent",
+    allowDynamicClientRegistration: true, // self-serve client registration
+    // Seed list only — the live one is bound after construction.
+    scopes: LIVE_SCOPE_VALUES,
+    // Admin-created clients share one owner, so every administrator can
+    // manage the same application catalog.
+    clientReference: ({ user }) =>
+        user?.role === "admin" ? "sso-admin" : undefined,
+    clientPrivileges: ({ user }) => user?.role === "admin",
+});
+
+bindPluginScopes(
+    (oauthProviderPlugin as unknown as { options: { scopes: string[] } }).options
+        .scopes,
+);
 
 export const auth = betterAuth({
     baseURL: process.env.BASE_URL, // https://reeyan.md
@@ -169,16 +190,7 @@ export const auth = betterAuth({
                 userVerification: "preferred",
             },
         }),
-        oauthProvider({
-            loginPage: "/sign-in",
-            consentPage: "/consent",
-            allowDynamicClientRegistration: true, // self-serve client registration
-            // Admin-created clients share one owner, so every administrator can
-            // manage the same application catalog.
-            clientReference: ({ user }) =>
-                user?.role === "admin" ? "sso-admin" : undefined,
-            clientPrivileges: ({ user }) => user?.role === "admin",
-        }),
+        oauthProviderPlugin,
     ],
     trustedOrigins: (process.env.TRUSTED_ORIGINS ?? "").split(","),
 });

@@ -2158,3 +2158,75 @@ a.btn-deny {
   display: block;
   margin-top: 0.7rem;
 }
+
+.scope-picker label.orphaned code {
+  color: var(--admin-red);
+}
+
+/* Scopes view */
+.scope-row {
+  display: grid;
+  min-height: 3.75rem;
+  grid-template-columns: minmax(180px, 1.2fr) minmax(200px, 1.6fr) 70px 80px minmax(160px, 0.9fr);
+  gap: 1rem;
+  align-items: center;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--admin-line);
+}
+
+.scope-row-header {
+  min-height: 2.2rem;
+  padding: 0;
+  color: var(--admin-muted);
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.scope-row-header > :last-child {
+  text-align: right;
+}
+
+.scope-name {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.scope-name code {
+  overflow: hidden;
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.modal-form small code {
+  font-size: 0.62rem;
+}
+
+@media (max-width: 1080px) {
+  .scope-row {
+    grid-template-columns: minmax(150px, 1.2fr) minmax(160px, 1.5fr) 60px minmax(140px, 0.9fr);
+  }
+
+  .scope-row > :nth-child(4) {
+    display: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .scope-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.4rem 1rem;
+  }
+
+  .scope-row-header {
+    display: none;
+  }
+
+  .scope-row > :nth-child(3) {
+    display: none;
+  }
+}
