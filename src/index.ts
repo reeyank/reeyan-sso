@@ -42,14 +42,19 @@ app.get("/api/sessions", async (c) => {
     );
   }
 
+  // Better Auth's resolved baseURL includes its default /api/auth basePath.
+  // process.env.BASE_URL is only the site origin in this deployment.
+  const authContext = await auth.$context;
+  const issuer = authContext.baseURL;
+
   let subject: string;
   try {
     const claims = await oauthResource.verifyAccessToken(accessToken, {
-      verifyOptions: { audience: process.env.BASE_URL ?? "" },
-      // BASE_URL is the OAuth issuer (https://host/api/auth). Passing this
-      // explicitly avoids the resource client appending Better Auth's basePath
-      // a second time and fetching /api/auth/api/auth/jwks.
-      jwksUrl: oauthJwksUrl(process.env.BASE_URL ?? ""),
+      verifyOptions: { audience: issuer, issuer },
+      // The resource client derives this from auth.options.baseURL, which does
+      // not include Better Auth's default basePath. Use the resolved issuer so
+      // verification fetches /api/auth/jwks rather than the 404 at /jwks.
+      jwksUrl: oauthJwksUrl(issuer),
       scopes: ["read:sessions"],
     });
     if (typeof claims.sub !== "string" || !claims.sub) {
@@ -84,7 +89,6 @@ app.get("/api/sessions", async (c) => {
   // physical SQL schema. This is the same lookup used by /list-sessions and
   // also works when sessions use custom field names or secondary storage.
   try {
-    const authContext = await auth.$context;
     return c.json({
       sessions: await listPublicSessions(
         subject,
