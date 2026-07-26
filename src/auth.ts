@@ -2,6 +2,7 @@ import { betterAuth } from "better-auth";
 import { jwt, admin } from "better-auth/plugins";
 import { createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
 import { oauthProvider } from "@better-auth/oauth-provider";
+import { oauthProviderResourceClient } from "@better-auth/oauth-provider/resource-client";
 import { passkey } from "@better-auth/passkey";
 import { bindPluginScopes, LIVE_SCOPE_VALUES } from "./scopes.js";
 import { pool } from "./db.js";
@@ -62,6 +63,10 @@ const oauthProviderPlugin = oauthProvider({
     allowDynamicClientRegistration: true, // self-serve client registration
     // Seed list only — the live one is bound after construction.
     scopes: LIVE_SCOPE_VALUES,
+    // Session metadata can include IP addresses and device information. Keep
+    // access tokens carrying this scope shorter-lived than the one-hour
+    // default.
+    scopeExpirations: { "read:sessions": "15m" },
     // Admin-created clients share one owner, so every administrator can
     // manage the same application catalog.
     clientReference: ({ user }) =>
@@ -194,3 +199,8 @@ export const auth = betterAuth({
     ],
     trustedOrigins: (process.env.TRUSTED_ORIGINS ?? "").split(","),
 });
+
+// Verifies OAuth access tokens presented to APIs hosted by this service. This
+// validates the JWT before applying endpoint-specific scope requirements.
+export const oauthResource =
+    oauthProviderResourceClient(auth).getActions();

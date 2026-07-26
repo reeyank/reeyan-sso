@@ -21,6 +21,11 @@ const SEED: ScopeDef[] = [
     description: "stay signed in on your behalf",
     required: false,
   },
+  {
+    value: "read:sessions",
+    description: "read your active sessions",
+    required: false,
+  },
 ];
 
 // The OAuth plugin reads opts.scopes on every request — validation at
