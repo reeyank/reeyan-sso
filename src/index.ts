@@ -5,7 +5,7 @@ import { auth, oauthResource } from "./auth.js";
 import { adminApi } from "./admin-api.js";
 import { ensureAuditTable, warnOnMissingTables } from "./audit.js";
 import { ensureScopeTable, reloadScopes, scopesFresh } from "./scopes.js";
-import { pool } from "./db.js";
+import { listPublicSessions } from "./sessions.js";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { readFileSync } from "node:fs";
 
@@ -71,14 +71,17 @@ app.get("/api/sessions", async (c) => {
     return c.json({ error: "server_error" }, 500);
   }
 
-  const result = await pool.query(
-    `select id, "createdAt", "updatedAt", "expiresAt", "ipAddress", "userAgent"
-       from session
-      where "userId" = $1 and "expiresAt" > now()
-      order by "createdAt" desc`,
-    [subject],
-  );
-  return c.json({ sessions: result.rows });
+  // Go through Better Auth's configured adapter instead of assuming its
+  // physical SQL schema. This is the same lookup used by /list-sessions and
+  // also works when sessions use custom field names or secondary storage.
+  const authContext = await auth.$context;
+  return c.json({
+    sessions: await listPublicSessions(
+      subject,
+      (userId, options) =>
+        authContext.internalAdapter.listSessions(userId, options),
+    ),
+  });
 });
 
 // Gate the account page here rather than in the client so a signed-out visitor
