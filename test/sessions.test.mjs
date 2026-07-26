@@ -1,6 +1,20 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { listPublicSessions } from "../dist/server/sessions.js";
+import {
+  listPublicSessions,
+  oauthJwksUrl,
+} from "../dist/server/sessions.js";
+
+test("builds the JWKS endpoint from the OAuth issuer without duplicating its path", () => {
+  assert.equal(
+    oauthJwksUrl("https://sso.example.com/api/auth"),
+    "https://sso.example.com/api/auth/jwks",
+  );
+  assert.equal(
+    oauthJwksUrl("https://sso.example.com/api/auth/"),
+    "https://sso.example.com/api/auth/jwks",
+  );
+});
 
 test("lists only the token subject's active sessions through the auth adapter", async () => {
   const requested = [];
