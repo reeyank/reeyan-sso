@@ -12,6 +12,10 @@ type ListSessions = (
   options: { onlyActiveSessions: true },
 ) => Promise<StoredSession[]>;
 
+export function oauthJwksUrl(baseUrl: string) {
+  return `${baseUrl.replace(/\/+$/, "")}/jwks`;
+}
+
 // Keep the resource endpoint on Better Auth's storage abstraction and return a
 // deliberately small DTO. In particular, never expose a browser session token
 // or its userId even if an adapter includes those fields in its result.

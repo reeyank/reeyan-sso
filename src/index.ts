@@ -6,7 +6,7 @@ import { auth, oauthResource } from "./auth.js";
 import { adminApi } from "./admin-api.js";
 import { ensureAuditTable, warnOnMissingTables } from "./audit.js";
 import { ensureScopeTable, reloadScopes, scopesFresh } from "./scopes.js";
-import { listPublicSessions } from "./sessions.js";
+import { listPublicSessions, oauthJwksUrl } from "./sessions.js";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { readFileSync } from "node:fs";
 
@@ -46,6 +46,10 @@ app.get("/api/sessions", async (c) => {
   try {
     const claims = await oauthResource.verifyAccessToken(accessToken, {
       verifyOptions: { audience: process.env.BASE_URL ?? "" },
+      // BASE_URL is the OAuth issuer (https://host/api/auth). Passing this
+      // explicitly avoids the resource client appending Better Auth's basePath
+      // a second time and fetching /api/auth/api/auth/jwks.
+      jwksUrl: oauthJwksUrl(process.env.BASE_URL ?? ""),
       scopes: ["read:sessions"],
     });
     if (typeof claims.sub !== "string" || !claims.sub) {
