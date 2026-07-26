@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
+import { randomUUID } from "node:crypto";
 import { isAPIError } from "better-auth/api";
 import { auth, oauthResource } from "./auth.js";
 import { adminApi } from "./admin-api.js";
@@ -28,6 +29,10 @@ app.route("/api/admin", adminApi);
 // The verified token subject fixes the user being queried; callers cannot
 // supply a different user ID. Session tokens are deliberately never returned.
 app.get("/api/sessions", async (c) => {
+  const requestId = c.req.header("x-trace-id") ?? randomUUID();
+  c.header("X-Reeyan-Sessions-Handler", "adapter-v2");
+  c.header("X-Reeyan-Trace-Id", requestId);
+
   const authorization = c.req.header("authorization");
   const accessToken = authorization?.match(/^Bearer[ \t]+(.+)$/i)?.[1];
   if (!accessToken) {
@@ -74,14 +79,29 @@ app.get("/api/sessions", async (c) => {
   // Go through Better Auth's configured adapter instead of assuming its
   // physical SQL schema. This is the same lookup used by /list-sessions and
   // also works when sessions use custom field names or secondary storage.
-  const authContext = await auth.$context;
-  return c.json({
-    sessions: await listPublicSessions(
-      subject,
-      (userId, options) =>
-        authContext.internalAdapter.listSessions(userId, options),
-    ),
-  });
+  try {
+    const authContext = await auth.$context;
+    return c.json({
+      sessions: await listPublicSessions(
+        subject,
+        (userId, options) =>
+          authContext.internalAdapter.listSessions(userId, options),
+      ),
+    });
+  } catch (error) {
+    // Keep the public response generic, but correlate it with the complete
+    // server-side exception so a production replay identifies the actual
+    // adapter/storage failure instead of collapsing it into an opaque 500.
+    console.error(`[sessions] lookup failed trace=${requestId}`, error);
+    return c.json(
+      {
+        error: "server_error",
+        error_description: "Session lookup failed.",
+        trace_id: requestId,
+      },
+      500,
+    );
+  }
 });
 
 // Gate the account page here rather than in the client so a signed-out visitor
