@@ -235,7 +235,7 @@ adminApi.get("/clients", async (c) => {
   const result = await pool.query(
     `select o."clientId", o.name, o.type, o."redirectUris", o."grantTypes", o.scopes,
             o."tokenEndpointAuthMethod", o."referenceId", o."userId",
-            o.disabled, o."createdAt", u.email as "ownerEmail"
+            o.disabled, o."skipConsent", o."createdAt", u.email as "ownerEmail"
        from "oauthClient" o
        left join "user" u on u.id = o."userId"
       order by o."createdAt" desc nulls last`,
@@ -253,6 +253,9 @@ adminApi.get("/clients", async (c) => {
       scope: Array.isArray(row.scopes) ? row.scopes.join(" ") : (row.scopes ?? ""),
       token_endpoint_auth_method: row.tokenEndpointAuthMethod,
       disabled: row.disabled ?? false,
+      // A client with this set never shows the consent screen at all, which is
+      // otherwise invisible and easy to mistake for a broken consent flow.
+      skip_consent: row.skipConsent ?? false,
       // Only these can be edited or have their secret rotated through the
       // Better Auth endpoints; the rest have to be adopted first.
       managed: row.referenceId === ADMIN_REFERENCE,

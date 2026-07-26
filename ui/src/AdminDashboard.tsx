@@ -29,6 +29,7 @@ type OAuthClient = {
   type?: string;
   scope?: string;
   disabled?: boolean;
+  skip_consent?: boolean;
   // False for clients Better Auth will not let this admin edit: they must be
   // adopted into the admin catalog first.
   managed?: boolean;
@@ -1366,6 +1367,14 @@ export function AdminDashboard() {
                       ) : null}
                       {client.disabled ? (
                         <span className="role-badge unmanaged">disabled</span>
+                      ) : null}
+                      {client.skip_consent ? (
+                        <span
+                          className="role-badge unmanaged"
+                          title="This client never shows the consent screen"
+                        >
+                          skips consent
+                        </span>
                       ) : null}
                     </div>
                     <code>{client.client_id}</code>

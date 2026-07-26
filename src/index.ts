@@ -1,9 +1,11 @@
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
-import { auth } from "./auth.js";
+import { isAPIError } from "better-auth/api";
+import { auth, oauthResource } from "./auth.js";
 import { adminApi } from "./admin-api.js";
 import { ensureAuditTable, warnOnMissingTables } from "./audit.js";
 import { ensureScopeTable, reloadScopes, scopesFresh } from "./scopes.js";
+import { pool } from "./db.js";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { readFileSync } from "node:fs";
 
@@ -21,6 +23,63 @@ app.on(["GET", "POST"], "/api/auth/**", (c) => auth.handler(c.req.raw));
 // Admin-only reads that Better Auth does not expose (audit log, other users'
 // OAuth consents).
 app.route("/api/admin", adminApi);
+
+// OAuth counterpart to Better Auth's cookie-authenticated /list-sessions.
+// The verified token subject fixes the user being queried; callers cannot
+// supply a different user ID. Session tokens are deliberately never returned.
+app.get("/api/sessions", async (c) => {
+  const authorization = c.req.header("authorization");
+  const accessToken = authorization?.match(/^Bearer[ \t]+(.+)$/i)?.[1];
+  if (!accessToken) {
+    return c.json(
+      { error: "invalid_token", error_description: "Bearer token required." },
+      401,
+    );
+  }
+
+  let subject: string;
+  try {
+    const claims = await oauthResource.verifyAccessToken(accessToken, {
+      verifyOptions: { audience: process.env.BASE_URL ?? "" },
+      scopes: ["read:sessions"],
+    });
+    if (typeof claims.sub !== "string" || !claims.sub) {
+      return c.json(
+        { error: "invalid_token", error_description: "Token has no user subject." },
+        401,
+      );
+    }
+    subject = claims.sub;
+  } catch (error) {
+    if (isAPIError(error) && error.status === "FORBIDDEN") {
+      return c.json(
+        {
+          error: "insufficient_scope",
+          error_description: "The read:sessions scope is required.",
+        },
+        403,
+        { "WWW-Authenticate": 'Bearer scope="read:sessions"' },
+      );
+    }
+    if (isAPIError(error)) {
+      return c.json(
+        { error: "invalid_token", error_description: "Access token is invalid." },
+        401,
+      );
+    }
+    console.error("[sessions] access-token verification failed", error);
+    return c.json({ error: "server_error" }, 500);
+  }
+
+  const result = await pool.query(
+    `select id, "createdAt", "updatedAt", "expiresAt", "ipAddress", "userAgent"
+       from session
+      where "userId" = $1 and "expiresAt" > now()
+      order by "createdAt" desc`,
+    [subject],
+  );
+  return c.json({ sessions: result.rows });
+});
 
 // Gate the account page here rather than in the client so a signed-out visitor
 // never renders it at all — no flash of account chrome before the redirect.
