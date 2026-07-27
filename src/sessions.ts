@@ -7,10 +7,20 @@ type StoredSession = {
   userAgent?: string | null;
 };
 
+type RevocableSession = {
+  id: string;
+  token: string;
+};
+
 type ListSessions = (
   userId: string,
   options: { onlyActiveSessions: true },
 ) => Promise<StoredSession[]>;
+
+type ListRevocableSessions = (
+  userId: string,
+  options: { onlyActiveSessions: true },
+) => Promise<RevocableSession[]>;
 
 export function oauthJwksUrl(baseUrl: string) {
   return `${baseUrl.replace(/\/+$/, "")}/jwks`;
@@ -35,4 +45,20 @@ export async function listPublicSessions(
       ipAddress: session.ipAddress ?? null,
       userAgent: session.userAgent ?? null,
     }));
+}
+
+// Resolve the opaque browser-session token only after listing by the verified
+// OAuth subject. A caller can never use this endpoint to revoke another user's
+// session, and the browser token is never returned to them.
+export async function revokeOwnedSession(
+  userId: string,
+  sessionId: string,
+  listSessions: ListRevocableSessions,
+  deleteSession: (token: string) => Promise<void>,
+) {
+  const sessions = await listSessions(userId, { onlyActiveSessions: true });
+  const target = sessions.find((session) => session.id === sessionId);
+  if (!target) return false;
+  await deleteSession(target.token);
+  return true;
 }

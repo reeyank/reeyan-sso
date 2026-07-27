@@ -26,6 +26,11 @@ const SEED: ScopeDef[] = [
     description: "read your active sessions",
     required: false,
   },
+  {
+    value: "delete:sessions",
+    description: "revoke your active sessions",
+    required: false,
+  },
 ];
 
 // The OAuth plugin reads opts.scopes on every request — validation at

@@ -6,12 +6,33 @@ import { auth, oauthResource } from "./auth.js";
 import { adminApi } from "./admin-api.js";
 import { ensureAuditTable, warnOnMissingTables } from "./audit.js";
 import { ensureScopeTable, reloadScopes, scopesFresh } from "./scopes.js";
-import { listPublicSessions, oauthJwksUrl } from "./sessions.js";
+import {
+  listPublicSessions,
+  oauthJwksUrl,
+  revokeOwnedSession,
+} from "./sessions.js";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { readFileSync } from "node:fs";
 
 const app = new Hono();
 const frontend = readFileSync("./dist/client/index.html", "utf8");
+
+type SessionsScope = "read:sessions" | "delete:sessions";
+
+async function verifySessionsToken(accessToken: string, scope: SessionsScope) {
+  const authContext = await auth.$context;
+  const issuer = authContext.baseURL;
+  const claims = await oauthResource.verifyAccessToken(accessToken, {
+    verifyOptions: { audience: issuer, issuer },
+    jwksUrl: oauthJwksUrl(issuer),
+    scopes: [scope],
+  });
+  return {
+    authContext,
+    subject:
+      typeof claims.sub === "string" && claims.sub ? claims.sub : undefined,
+  };
+}
 
 app.use("/assets/*", serveStatic({ root: "./dist/client" }));
 app.use("/fonts/*", serveStatic({ root: "./dist/client" }));
@@ -42,28 +63,18 @@ app.get("/api/sessions", async (c) => {
     );
   }
 
-  // Better Auth's resolved baseURL includes its default /api/auth basePath.
-  // process.env.BASE_URL is only the site origin in this deployment.
-  const authContext = await auth.$context;
-  const issuer = authContext.baseURL;
-
   let subject: string;
+  let authContext: Awaited<typeof auth.$context>;
   try {
-    const claims = await oauthResource.verifyAccessToken(accessToken, {
-      verifyOptions: { audience: issuer, issuer },
-      // The resource client derives this from auth.options.baseURL, which does
-      // not include Better Auth's default basePath. Use the resolved issuer so
-      // verification fetches /api/auth/jwks rather than the 404 at /jwks.
-      jwksUrl: oauthJwksUrl(issuer),
-      scopes: ["read:sessions"],
-    });
-    if (typeof claims.sub !== "string" || !claims.sub) {
+    const verified = await verifySessionsToken(accessToken, "read:sessions");
+    if (!verified.subject) {
       return c.json(
         { error: "invalid_token", error_description: "Token has no user subject." },
         401,
       );
     }
-    subject = claims.sub;
+    subject = verified.subject;
+    authContext = verified.authContext;
   } catch (error) {
     if (isAPIError(error) && error.status === "FORBIDDEN") {
       return c.json(
@@ -105,6 +116,89 @@ app.get("/api/sessions", async (c) => {
       {
         error: "server_error",
         error_description: "Session lookup failed.",
+        trace_id: requestId,
+      },
+      500,
+    );
+  }
+});
+
+// Revoke one of the OAuth subject's browser sessions by public session ID.
+// The underlying session token is resolved and consumed only on the server.
+app.delete("/api/sessions/:sessionId", async (c) => {
+  const requestId = c.req.header("x-trace-id") ?? randomUUID();
+  c.header("X-Reeyan-Sessions-Handler", "adapter-v3");
+  c.header("X-Reeyan-Trace-Id", requestId);
+
+  const authorization = c.req.header("authorization");
+  const accessToken = authorization?.match(/^Bearer[ \t]+(.+)$/i)?.[1];
+  if (!accessToken) {
+    return c.json(
+      { error: "invalid_token", error_description: "Bearer token required." },
+      401,
+    );
+  }
+
+  let subject: string;
+  let authContext: Awaited<typeof auth.$context>;
+  try {
+    const verified = await verifySessionsToken(accessToken, "delete:sessions");
+    if (!verified.subject) {
+      return c.json(
+        { error: "invalid_token", error_description: "Token has no user subject." },
+        401,
+      );
+    }
+    subject = verified.subject;
+    authContext = verified.authContext;
+  } catch (error) {
+    if (isAPIError(error) && error.status === "FORBIDDEN") {
+      return c.json(
+        {
+          error: "insufficient_scope",
+          error_description: "The delete:sessions scope is required.",
+        },
+        403,
+        { "WWW-Authenticate": 'Bearer scope="delete:sessions"' },
+      );
+    }
+    if (isAPIError(error)) {
+      return c.json(
+        { error: "invalid_token", error_description: "Access token is invalid." },
+        401,
+      );
+    }
+    console.error(
+      `[sessions] delete access-token verification failed trace=${requestId}`,
+      error,
+    );
+    return c.json({ error: "server_error", trace_id: requestId }, 500);
+  }
+
+  try {
+    const revoked = await revokeOwnedSession(
+      subject,
+      c.req.param("sessionId"),
+      (userId, options) =>
+        authContext.internalAdapter.listSessions(userId, options),
+      (token) => authContext.internalAdapter.deleteSession(token),
+    );
+    if (!revoked) {
+      return c.json(
+        {
+          error: "session_not_found",
+          error_description: "Active session not found.",
+        },
+        404,
+      );
+    }
+    return c.body(null, 204);
+  } catch (error) {
+    console.error(`[sessions] revoke failed trace=${requestId}`, error);
+    return c.json(
+      {
+        error: "server_error",
+        error_description: "Session revocation failed.",
         trace_id: requestId,
       },
       500,
