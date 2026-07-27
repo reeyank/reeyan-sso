@@ -66,7 +66,10 @@ const oauthProviderPlugin = oauthProvider({
     // Session metadata can include IP addresses and device information. Keep
     // access tokens carrying this scope shorter-lived than the one-hour
     // default.
-    scopeExpirations: { "read:sessions": "15m" },
+    scopeExpirations: {
+        "read:sessions": "15m",
+        "delete:sessions": "5m",
+    },
     // Admin-created clients share one owner, so every administrator can
     // manage the same application catalog.
     clientReference: ({ user }) =>
