@@ -74,8 +74,23 @@ function redirectTarget(fallback: string) {
   );
 }
 
+// After a successful sign-in, decide where to send the user. When they arrived
+// mid-OIDC, Better Auth's oauthProvider redirected the unauthenticated
+// /oauth2/authorize request to loginPage carrying the original authorization
+// query (client_id, redirect_uri, scope, sig, exp, …). We must resume the
+// authorize endpoint with that same query so it can now issue the code and hand
+// control back to the client (e.g. stationpos://…). Without a client_id this is
+// an ordinary dashboard login, so fall back to the normal redirect target.
+function postLoginTarget() {
+  const search = window.location.search;
+  if (new URLSearchParams(search).has("client_id")) {
+    return `/api/auth/oauth2/authorize${search}`;
+  }
+  return redirectTarget("/");
+}
+
 function SignInPage() {
-  const redirectTo = redirectTarget("/");
+  const redirectTo = postLoginTarget();
   const [error, setError] = useState(false);
   const [passkeyError, setPasskeyError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
